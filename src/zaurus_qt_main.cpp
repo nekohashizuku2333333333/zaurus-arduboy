@@ -1,9 +1,13 @@
 #include <qkeycode.h>
+#ifdef ZAURUS_QVFB_HOST
+#include <qapplication.h>
+#else
+#include <qpe/qpeapplication.h>
+#endif
 #include <qpainter.h>
 #include <qrect.h>
 #include <qstring.h>
 #include <qwidget.h>
-#include <qpe/qpeapplication.h>
 
 #include <dirent.h>
 #include <sys/stat.h>
@@ -495,9 +499,15 @@ private:
 
 int main(int argc, char **argv)
 {
+#ifdef ZAURUS_QVFB_HOST
+	QApplication app(argc, argv);
+#else
 	QPEApplication app(argc, argv);
+#endif
 	ArduboyWidget w(argc >= 2 ? argv[1] : 0);
+#ifndef ZAURUS_QVFB_HOST
 	app.setMainWidget(&w);
+#endif
 	w.show();
 	return app.exec();
 }
