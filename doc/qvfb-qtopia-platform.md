@@ -97,8 +97,17 @@ If you start the emulator without a `.hex`, use the on-screen `Load` button and 
 The Qt frontend maps keys as follows:
 
 - Arrow keys: Arduboy D-pad.
+- `W`, `A`, `S`, `D`: Arduboy D-pad.
 - `Z`, `Return`, or `Space`: Arduboy A.
 - `X` or `Escape`: Arduboy B.
+
+The top `Keys` button opens the in-app mapping menu.  Tap a row, then press the replacement key.  `Defaults` restores the built-in mapping.  The host-side mapping file is stored at:
+
+```sh
+$HOME/.arduboy-zaurus.keys
+```
+
+The emulator view also has mouse/touch virtual controls on the bottom edge, useful when QVFb keyboard delivery is awkward.  `Speed` toggles between full-speed cycle stepping and a half-speed debug mode.
 
 ## Current Verification
 
@@ -114,4 +123,3 @@ file /tmp/arduboy-qtopia-qvfb/app/build/qvfb/zaurusarduboy_qvfb
 Both `qvfb` and `zaurusarduboy_qvfb` are 32-bit Intel 80386 Linux ELF executables.
 
 The SSH shell used during setup did not have a usable `DISPLAY`, so actual visual opening of the QVFb window still needs to be done from the remote machine's X11 desktop, VNC session, or an SSH session with X forwarding enabled.
-

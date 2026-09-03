@@ -28,7 +28,7 @@ src/zaurus_qt_main.cpp
 ## UI Behavior
 
 The widget is fixed at 640x480.  The top 48 pixels are a hand-drawn
-toolbar with Load, Pause/Run, and Reset buttons.  The Arduboy
+toolbar with Load, Pause/Run, Reset, Keys, and Speed buttons.  The Arduboy
 framebuffer is 128x64, scaled 5x to 640x320 and centered below the
 toolbar.
 
@@ -42,9 +42,26 @@ Key mapping:
 
 ```text
 Arrow keys       -> D-pad
+W / A / S / D    -> D-pad
 Z / Return/Space -> A
 X / Escape       -> B
 ```
+
+`Keys` opens the in-app mapping menu.  Tap an Arduboy button row, then
+press the replacement keyboard key.  `Defaults` restores the built-in
+mapping.  The mapping is saved to:
+
+```text
+$HOME/.arduboy-zaurus.keys
+```
+
+The emulator view also draws mouse/touch virtual controls near the
+bottom edge.  They are mainly for QVFb and touchscreen smoke testing:
+Left/Right/Up/Down are on the lower left, A/B are on the lower right.
+
+`Speed` toggles a conservative slow mode that runs half the normal AVR
+cycles per UI tick.  This is useful when validating behavior on slower
+hosts or when a game is too busy for interactive debugging.
 
 EEPROM save path:
 
@@ -92,7 +109,6 @@ Expected trouble spots:
 ```text
 C object ELF flags and libgcc helper references must be checked on target
 GNU case ranges are accepted by GCC 3.4.6
-Qt2 key enum names may vary slightly and need remote SDK validation
 ```
 
 ## Remote Self-Debug Results
