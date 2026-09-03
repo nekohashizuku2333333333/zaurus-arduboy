@@ -1,0 +1,6 @@
+*.o
+*.a
+tools/dump_frame
+/zaurusarduboy
+/tmp/
+.repo.git/
