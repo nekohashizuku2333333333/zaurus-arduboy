@@ -4,7 +4,11 @@
 #else
 #include <qpe/qpeapplication.h>
 #endif
+#include <qfont.h>
+#include <qimage.h>
+#include <qevent.h>
 #include <qpainter.h>
+#include <qpixmap.h>
 #include <qrect.h>
 #include <qstring.h>
 #include <qwidget.h>
@@ -19,20 +23,33 @@ extern "C" {
 #include "arduboy_core.h"
 }
 
-#define SCALE 5
 #define SCREEN_W 640
 #define SCREEN_H 480
+#ifdef ZAURUS_QVFB_HOST
+#define SCALE 5
+#define CYCLES_PER_TICK (16000000 / 60)
+#define FAST_CYCLES_PER_TICK (16000000 / 60)
+#else
+#define SCALE 4
+#define CYCLES_PER_TICK 30000
+#define FAST_CYCLES_PER_TICK 90000
+#endif
 #define DRAW_W (ZAURUS_ARDUBOY_WIDTH * SCALE)
 #define DRAW_H (ZAURUS_ARDUBOY_HEIGHT * SCALE)
 #define DRAW_X ((SCREEN_W - DRAW_W) / 2)
-#define TOOLBAR_H 48
-#define DRAW_Y (TOOLBAR_H + ((SCREEN_H - TOOLBAR_H - DRAW_H) / 2))
-#define CYCLES_PER_TICK (16000000 / 60)
+#define TOOLBAR_H 34
+#define CONTENT_H 404
+#define DRAW_Y (TOOLBAR_H + ((CONTENT_H - TOOLBAR_H - DRAW_H) / 2))
 #define MAX_ENTRIES 96
-#define ROW_H 28
+#define ROW_H 22
 #define MAX_KEYS_PER_BUTTON 4
 #define BUTTON_COUNT 6
 #define BUTTON_NONE (-1)
+#ifdef ZAURUS_QVFB_HOST
+#define ENABLE_VIRTUAL_BUTTONS 1
+#else
+#define ENABLE_VIRTUAL_BUTTONS 0
+#endif
 
 struct BrowserEntry {
 	char name[192];
@@ -62,10 +79,12 @@ public:
 		: QWidget(parent, name), emu(0), buttons(0), paused(0),
 		  browserMode(0), keyMenuMode(0), mappingButton(BUTTON_NONE),
 		  mouseButton(BUTTON_NONE), entryCount(0), scrollRow(0),
-		  messageTicks(0), slowMode(0)
+		  messageTicks(0), slowMode(1), displayImage(DRAW_W, DRAW_H, 32),
+		  displayPixmap(DRAW_W, DRAW_H)
 	{
 		setFixedSize(SCREEN_W, SCREEN_H);
 		setFocusPolicy(QWidget::StrongFocus);
+		setFont(QFont("song", 10));
 
 		char eepromPath[512];
 		const char *home = getenv("HOME");
@@ -100,19 +119,27 @@ public:
 	}
 
 protected:
-	void paintEvent(QPaintEvent *)
+	void paintEvent(QPaintEvent *e)
 	{
 		QPainter p(this);
-		p.fillRect(rect(), QColor(0, 0, 0));
-		drawToolbar(p);
-		if (browserMode)
+		QRect dirty = e->rect();
+		QRect toolbarArea(0, 0, SCREEN_W, TOOLBAR_H);
+		QRect frameArea(DRAW_X - 1, DRAW_Y - 1, DRAW_W + 2, DRAW_H + 2);
+
+		p.setClipRect(dirty);
+		p.fillRect(dirty, QColor(0, 0, 0));
+		if (dirty.intersects(toolbarArea))
+			drawToolbar(p);
+		if (browserMode) {
 			drawBrowser(p);
-		else if (keyMenuMode)
+		} else if (keyMenuMode) {
 			drawKeyMenu(p);
-		else if (emu)
-			drawFrame(p);
-		else
+		} else if (emu) {
+			if (dirty.intersects(frameArea))
+				drawFrame(p);
+		} else {
 			drawEmptyState(p);
+		}
 	}
 
 	void mouseReleaseEvent(QMouseEvent *e)
@@ -156,12 +183,12 @@ protected:
 			update();
 		} else if (speedRect.contains(e->pos())) {
 			slowMode = !slowMode;
-			setMessage(slowMode ? "Slow mode" : "Full speed");
+			setMessage(slowMode ? "Light mode" : "Boost mode");
 			update();
 		} else if (browserMode) {
 			handleBrowserClick(e->pos().y());
 		} else if (keyMenuMode) {
-			handleKeyMenuClick(e->pos().y());
+			handleKeyMenuClick(e->pos());
 		}
 		setFocus();
 	}
@@ -246,15 +273,18 @@ private:
 	int scrollRow;
 	int messageTicks;
 	int slowMode;
+	QImage displayImage;
+	QPixmap displayPixmap;
 
 	void tick()
 	{
 		if (browserMode || !emu || paused)
 			return;
-		zaurus_arduboy_run_cycles(emu, slowMode ? CYCLES_PER_TICK / 2
-							: CYCLES_PER_TICK);
+		zaurus_arduboy_run_cycles(emu, slowMode ? CYCLES_PER_TICK
+							: FAST_CYCLES_PER_TICK);
 		if (zaurus_arduboy_frame_dirty(emu)) {
 			zaurus_arduboy_clear_frame_dirty(emu);
+			rebuildDisplayImage();
 			update(DRAW_X, DRAW_Y, DRAW_W, DRAW_H);
 		}
 	}
@@ -286,17 +316,17 @@ private:
 
 	void setButtons()
 	{
-		loadRect = QRect(8, 8, 82, 32);
-		pauseRect = QRect(96, 8, 82, 32);
-		resetRect = QRect(184, 8, 82, 32);
-		keysRect = QRect(272, 8, 82, 32);
-		speedRect = QRect(360, 8, 82, 32);
-		virtualRects[0] = QRect(32, 402, 48, 34);
-		virtualRects[1] = QRect(136, 402, 48, 34);
-		virtualRects[2] = QRect(84, 368, 48, 34);
-		virtualRects[3] = QRect(84, 436, 48, 34);
-		virtualRects[4] = QRect(500, 384, 52, 42);
-		virtualRects[5] = QRect(572, 420, 52, 42);
+		loadRect = QRect(8, 5, 82, 24);
+		pauseRect = QRect(96, 5, 82, 24);
+		resetRect = QRect(184, 5, 82, 24);
+		keysRect = QRect(272, 5, 82, 24);
+		speedRect = QRect(360, 5, 82, 24);
+		virtualRects[0] = QRect(28, 404, 44, 30);
+		virtualRects[1] = QRect(120, 404, 44, 30);
+		virtualRects[2] = QRect(74, 374, 44, 30);
+		virtualRects[3] = QRect(74, 434, 44, 30);
+		virtualRects[4] = QRect(506, 392, 44, 32);
+		virtualRects[5] = QRect(576, 424, 44, 32);
 	}
 
 	void setMessage(const char *text)
@@ -448,19 +478,31 @@ private:
 
 	void handleBrowserClick(int y)
 	{
-		int listTop = TOOLBAR_H + 34;
+		int listTop = TOOLBAR_H + 24;
 		int row = (y - listTop) / ROW_H;
 		if (y < listTop)
 			return;
 		enterBrowserEntry(scrollRow + row);
 	}
 
-	void handleKeyMenuClick(int y)
+	void handleKeyMenuClick(const QPoint &pt)
 	{
-		int listTop = TOOLBAR_H + 54;
-		int row = (y - listTop) / ROW_H;
-		if (row >= 0 && row < BUTTON_COUNT) {
-			mappingButton = row;
+		int listTop = TOOLBAR_H + 24;
+		int colW = (SCREEN_W - 30) / 2;
+		int row = (pt.y() - listTop) / ROW_H;
+		int col = -1;
+		int idx;
+		if (pt.y() < listTop)
+			return;
+		if (pt.x() >= 10 && pt.x() < 10 + colW)
+			col = 0;
+		else if (pt.x() >= 20 + colW && pt.x() < 20 + colW * 2)
+			col = 1;
+		if (col < 0)
+			return;
+		idx = row * 2 + col;
+		if (idx >= 0 && idx < BUTTON_COUNT) {
+			mappingButton = idx;
 			setMessage("Press a key");
 			update();
 		}
@@ -492,6 +534,7 @@ private:
 		zaurus_arduboy_set_buttons(emu, buttons);
 		strncpy(currentHex, path, sizeof(currentHex) - 1);
 		currentHex[sizeof(currentHex) - 1] = 0;
+		rebuildDisplayImage();
 		setMessage("Loaded");
 		update();
 		return 1;
@@ -516,19 +559,19 @@ private:
 		drawButton(p, resetRect, keyMenuMode ? "Defaults" :
 			   (browserMode ? "Up" : "Reset"), 0);
 		drawButton(p, keysRect, "Keys", keyMenuMode);
-		drawButton(p, speedRect, slowMode ? "Slow" : "Speed", slowMode);
+		drawButton(p, speedRect, slowMode ? "Light" : "Boost", slowMode);
 		p.setPen(QColor(210, 210, 210));
 		if (message[0])
-			p.drawText(454, 8, SCREEN_W - 462, 32,
+			p.drawText(450, 5, SCREEN_W - 458, 24,
 				   AlignVCenter | AlignLeft, message);
 		else if (browserMode)
-			p.drawText(454, 8, SCREEN_W - 462, 32,
+			p.drawText(450, 5, SCREEN_W - 458, 24,
 				   AlignVCenter | AlignLeft, browserDir);
 		else if (currentHex[0])
-			p.drawText(454, 8, SCREEN_W - 462, 32,
+			p.drawText(450, 5, SCREEN_W - 458, 24,
 				   AlignVCenter | AlignLeft, currentHex);
 		else
-			p.drawText(454, 8, SCREEN_W - 462, 32,
+			p.drawText(450, 5, SCREEN_W - 458, 24,
 				   AlignVCenter | AlignLeft, "No game loaded");
 	}
 
@@ -545,13 +588,13 @@ private:
 	void drawBrowser(QPainter &p)
 	{
 		int i;
-		int listTop = TOOLBAR_H + 34;
+		int listTop = TOOLBAR_H + 24;
 		int visible = (SCREEN_H - listTop - 10) / ROW_H;
 
 		p.fillRect(0, TOOLBAR_H, SCREEN_W, SCREEN_H - TOOLBAR_H,
 			   QColor(10, 12, 14));
 		p.setPen(QColor(210, 210, 210));
-		p.drawText(12, TOOLBAR_H + 8, SCREEN_W - 24, 22,
+		p.drawText(12, TOOLBAR_H + 2, SCREEN_W - 24, 18,
 			   AlignVCenter | AlignLeft, "Choose a .hex file");
 
 		for (i = 0; i < visible; i++) {
@@ -583,20 +626,20 @@ private:
 
 	void drawKeyMenu(QPainter &p)
 	{
-		int i;
-		int listTop = TOOLBAR_H + 54;
+		int i, col, row;
+		int listTop = TOOLBAR_H + 24;
+		int colW = (SCREEN_W - 30) / 2;
 		p.fillRect(0, TOOLBAR_H, SCREEN_W, SCREEN_H - TOOLBAR_H,
 			   QColor(10, 12, 14));
 		p.setPen(QColor(230, 230, 230));
-		p.drawText(12, TOOLBAR_H + 8, SCREEN_W - 24, 22,
+		p.drawText(12, TOOLBAR_H + 2, SCREEN_W - 24, 18,
 			   AlignVCenter | AlignLeft,
-			   "Tap a row, then press the replacement key");
-		p.setPen(QColor(150, 150, 150));
-		p.drawText(12, TOOLBAR_H + 30, SCREEN_W - 24, 20,
-			   AlignVCenter | AlignLeft,
-			   "Defaults: arrows/WASD, Z/Return/Space=A, X/Esc=B");
+			   "Tap row, press key. Defaults: arrows/WASD, Z/Space=A, X/Esc=B");
 		for (i = 0; i < BUTTON_COUNT; i++) {
-			QRect r(10, listTop + i * ROW_H, SCREEN_W - 20, ROW_H - 2);
+			col = i & 1;
+			row = i >> 1;
+			QRect r(10 + col * (colW + 10), listTop + row * ROW_H,
+				colW, ROW_H - 2);
 			char label[256];
 			snprintf(label, sizeof(label), "%s    %s",
 				 BINDINGS[i].name, bindingText(i));
@@ -610,41 +653,60 @@ private:
 
 	void drawVirtualControls(QPainter &p)
 	{
+#if ENABLE_VIRTUAL_BUTTONS
 		int i;
 		for (i = 0; i < BUTTON_COUNT; i++) {
 			int active = (buttons & BINDINGS[i].bit) != 0;
 			drawButton(p, virtualRects[i], BINDINGS[i].name, active);
 		}
+#else
+		(void)p;
+#endif
 	}
 
 	void drawFrame(QPainter &p)
 	{
+		p.drawPixmap(DRAW_X, DRAW_Y, displayPixmap);
+		p.setPen(QColor(60, 60, 60));
+		p.drawRect(DRAW_X - 1, DRAW_Y - 1, DRAW_W + 1, DRAW_H + 1);
+		drawVirtualControls(p);
+	}
+
+	void rebuildDisplayImage()
+	{
 		const unsigned char *fb = zaurus_arduboy_framebuffer(emu);
 		unsigned x, y;
+		unsigned sx, sy;
+		unsigned int white = 0xffffffff;
+		unsigned int black = 0xff000000;
 
 		for (y = 0; y < ZAURUS_ARDUBOY_HEIGHT; y++) {
 			for (x = 0; x < ZAURUS_ARDUBOY_WIDTH; x++) {
 				unsigned page = y >> 3;
 				unsigned bit = y & 7;
 				int on = (fb[page * 128 + x] >> bit) & 1;
-				p.fillRect(DRAW_X + x * SCALE, DRAW_Y + y * SCALE,
-					   SCALE, SCALE,
-					   on ? QColor(240, 240, 240)
-					      : QColor(0, 0, 0));
+				unsigned int color = on ? white : black;
+				for (sy = 0; sy < SCALE; sy++) {
+					unsigned int *line = (unsigned int *)displayImage.scanLine(y * SCALE + sy);
+					for (sx = 0; sx < SCALE; sx++)
+						line[x * SCALE + sx] = color;
+				}
 			}
 		}
-		p.setPen(QColor(60, 60, 60));
-		p.drawRect(DRAW_X - 1, DRAW_Y - 1, DRAW_W + 1, DRAW_H + 1);
-		drawVirtualControls(p);
+		displayPixmap.convertFromImage(displayImage);
 	}
 
 	int virtualButtonAt(const QPoint &pt)
 	{
+#if ENABLE_VIRTUAL_BUTTONS
 		int i;
 		for (i = 0; i < BUTTON_COUNT; i++) {
 			if (virtualRects[i].contains(pt))
 				return i;
 		}
+#else
+		(void)pt;
+#endif
 		return BUTTON_NONE;
 	}
 
@@ -752,6 +814,7 @@ int main(int argc, char **argv)
 #else
 	QPEApplication app(argc, argv);
 #endif
+	app.setFont(QFont("song", 10), true);
 	ArduboyWidget w(argc >= 2 ? argv[1] : 0);
 #ifndef ZAURUS_QVFB_HOST
 	app.setMainWidget(&w);

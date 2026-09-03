@@ -27,10 +27,12 @@ src/zaurus_qt_main.cpp
 
 ## UI Behavior
 
-The widget is fixed at 640x480.  The top 48 pixels are a hand-drawn
-toolbar with Load, Pause/Run, Reset, Keys, and Speed buttons.  The Arduboy
-framebuffer is 128x64, scaled 5x to 640x320 and centered below the
-toolbar.
+The widget is fixed at 640x480.  The top 34 pixels are a hand-drawn
+toolbar with Load, Pause/Run, Reset, Keys, and Speed buttons.  The QVFb
+host build scales the Arduboy framebuffer 5x to 640x320 for desktop
+inspection.  The ARM/Zaurus build scales it 4x to 512x256 so the full
+game image remains visible beside the Qtopia right-side task strip and
+above the bottom taskbar.
 
 Load opens an in-app file browser implemented with POSIX directory
 scanning.  This avoids `QFileDialog`, which is absent from the target
@@ -55,13 +57,19 @@ mapping.  The mapping is saved to:
 $HOME/.arduboy-zaurus.keys
 ```
 
-The emulator view also draws mouse/touch virtual controls near the
-bottom edge.  They are mainly for QVFb and touchscreen smoke testing:
-Left/Right/Up/Down are on the lower left, A/B are on the lower right.
+The QVFb host build draws mouse/touch virtual controls near the bottom
+edge for smoke testing.  The ARM/Zaurus binary does not include these
+test controls, so they do not cover game content on the real device.
 
-`Speed` toggles a conservative slow mode that runs half the normal AVR
-cycles per UI tick.  This is useful when validating behavior on slower
-hosts or when a game is too busy for interactive debugging.
+The `Keys` menu uses a compact two-column layout to fit the 640x480
+Qtopia screen with the same `song` QPF font family used by the
+Zaurus markdown writer test app.
+
+`Speed` toggles between `Light` and `Boost`.  On ARM, `Light` is the
+default and runs 30000 AVR cycles per UI tick to keep Qtopia responsive;
+`Boost` raises that to 90000 cycles per tick for faster game progress.
+QVFb keeps the desktop test path at the full nominal 16 MHz / 60 Hz
+budget.
 
 EEPROM save path:
 
@@ -143,6 +151,7 @@ Define QT_NO_PROPERTIES and QT_NO_DRAGANDDROP for the Qt frontend.
 Provide a local __sync_synchronize() stub for older ARM gcc output.
 Use -Wl,--allow-shlib-undefined so libqte's libjpeg runtime dependency is not resolved from the incompatible 3.4 VFP sysroot.
 Replace QFileDialog with the in-app browser because libqte.so in this SDK exports QDialog but not QFileDialog.
+Use cached QImage/QPixmap frame surfaces and clipped paint regions instead of drawing thousands of QRect blocks and repainting the toolbar on every frame.
 ```
 
 Final binary:
