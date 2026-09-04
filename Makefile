@@ -12,6 +12,10 @@ CPPFLAGS += -Iinclude -Isrc $(SIM_INC)
 ifeq ($(FAST),1)
 CPPFLAGS += -DARDUBOY_FAST_DISPATCH
 endif
+# JIT=1 builds the dynarec scaffolding (implies fast dispatch). Off by default.
+ifeq ($(JIT),1)
+CPPFLAGS += -DARDUBOY_FAST_DISPATCH -DARDUBOY_JIT
+endif
 
 SIM_SRCS := \
 	$(SIMAVR)/cores/sim_mega32u4.c \
@@ -37,6 +41,7 @@ SIM_SRCS := \
 	$(SIMAVR)/sim/sim_irq.c \
 	$(SIMAVR)/sim/sim_utils.c \
 	$(SIMAVR)/sim/sim_vcd_file.c \
+	$(SIMAVR)/sim/avr_jit.c \
 	$(SIMAVR)/examples/parts/ssd1306_virt.c
 
 CORE_SRCS := src/hex_loader.c src/arduboy_core.c

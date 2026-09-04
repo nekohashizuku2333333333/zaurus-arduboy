@@ -152,6 +152,9 @@ avr_flash_ioctl(
 					}
 				}
 			}
+#ifdef ARDUBOY_JIT
+			{ extern void avr_jit_flush(void); avr_jit_flush(); }
+#endif
 			res = 0;
 		}	break;
 	    default:

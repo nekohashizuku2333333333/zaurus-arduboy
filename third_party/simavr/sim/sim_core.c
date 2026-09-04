@@ -699,6 +699,20 @@ _avr_flags_zns16 (struct avr_t * avr, uint16_t res)
 static  void
 _avr_flags_add_zns (struct avr_t * avr, uint8_t res, uint8_t rd, uint8_t rr)
 {
+#ifdef ARDUBOY_FAST_DISPATCH
+	/* Identical formulas (res-based, so correct for ADC's carry-in too),
+	 * but N and V are held in locals and reused for S, so the zns tail
+	 * doesn't re-read sreg[]. */
+	uint8_t add_carry = (rd & rr) | (rr & ~res) | (~res & rd);
+	uint8_t n = res >> 7;
+	uint8_t v = (((rd & rr & ~res) | (~rd & ~rr & res)) >> 7) & 1;
+	avr->sreg[S_H] = (add_carry >> 3) & 1;
+	avr->sreg[S_C] = (add_carry >> 7) & 1;
+	avr->sreg[S_V] = v;
+	avr->sreg[S_Z] = res == 0;
+	avr->sreg[S_N] = n;
+	avr->sreg[S_S] = n ^ v;
+#else
 	/* carry & half carry */
 	uint8_t add_carry = (rd & rr) | (rr & ~res) | (~res & rd);
 	avr->sreg[S_H] = (add_carry >> 3) & 1;
@@ -709,6 +723,7 @@ _avr_flags_add_zns (struct avr_t * avr, uint8_t res, uint8_t rd, uint8_t rr)
 
 	/* zns */
 	_avr_flags_zns(avr, res);
+#endif
 }
 
 
@@ -721,10 +736,23 @@ _avr_flags_sub_zns (struct avr_t * avr, uint8_t res, uint8_t rd, uint8_t rr)
 	avr->sreg[S_C] = (sub_carry >> 7) & 1;
 
 	/* overflow */
+#ifdef ARDUBOY_FAST_DISPATCH
+	{
+		/* identical values; hold N and V in locals so the zns tail
+		 * doesn't re-read sreg[] (helps compilers that CSE weakly). */
+		uint8_t n = res >> 7;
+		uint8_t v = (((rd & ~rr & ~res) | (~rd & rr & res)) >> 7) & 1;
+		avr->sreg[S_V] = v;
+		avr->sreg[S_Z] = res == 0;
+		avr->sreg[S_N] = n;
+		avr->sreg[S_S] = n ^ v;
+	}
+#else
 	avr->sreg[S_V] = (((rd & ~rr & ~res) | (~rd & rr & res)) >> 7) & 1;
 
 	/* zns */
 	_avr_flags_zns(avr, res);
+#endif
 }
 
 static  void
@@ -745,9 +773,22 @@ _avr_flags_sub_Rzns (struct avr_t * avr, uint8_t res, uint8_t rd, uint8_t rr)
 	avr->sreg[S_C] = (sub_carry >> 7) & 1;
 
 	/* overflow */
+#ifdef ARDUBOY_FAST_DISPATCH
+	{
+		/* CPC/SBC-style: Z is only cleared, never set; N/V held local. */
+		uint8_t n = res >> 7;
+		uint8_t v = (((rd & ~rr & ~res) | (~rd & rr & res)) >> 7) & 1;
+		avr->sreg[S_V] = v;
+		if (res)
+			avr->sreg[S_Z] = 0;
+		avr->sreg[S_N] = n;
+		avr->sreg[S_S] = n ^ v;
+	}
+#else
 	avr->sreg[S_V] = (((rd & ~rr & ~res) | (~rd & rr & res)) >> 7) & 1;
 
 	_avr_flags_Rzns(avr, res);
+#endif
 }
 
 static  void
@@ -804,6 +845,19 @@ static inline int _avr_is_instruction_32_bits(avr_t * avr, avr_flashaddr_t pc)
  * The number of cycles taken by instruction has been added, but might not be
  * entirely accurate.
  */
+/*
+ * Flash address wrap for relative jumps/calls.  AVR flash size is always a
+ * power of two, so avr->flashend is an all-ones mask and
+ * (x % (flashend+1)) == (x & flashend).  ARMv5 has no hardware divide, so
+ * under fast dispatch this replaces a per-branch software modulo
+ * (__aeabi_idivmod) with a single AND.  The modulo form is kept otherwise.
+ */
+#ifdef ARDUBOY_FAST_DISPATCH
+#define AVR_FLASH_WRAP(avr, x) ((x) & (avr)->flashend)
+#else
+#define AVR_FLASH_WRAP(avr, x) ((x) % ((avr)->flashend + 1))
+#endif
+
 avr_flashaddr_t avr_run_one(avr_t * avr)
 {
 run_one_again:
@@ -832,7 +886,15 @@ run_one_again:
 		return 0;
 	}
 
+#if defined(ARDUBOY_FAST_DISPATCH) && \
+    (defined(__ARMEL__) || defined(__i386__) || defined(__x86_64__) || \
+     (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__))
+	/* PC is always 2-byte aligned; read the opcode word in one aligned load
+	 * with no even-address check (this is the hottest fetch in the core). */
+	uint32_t		opcode = *(const uint16_t *)(avr->flash + avr->pc);
+#else
 	uint32_t		opcode = _avr_flash_read16le(avr, avr->pc);
+#endif
 	avr_flashaddr_t	new_pc = avr->pc + 2;	// future "default" pc
 	int 			cycle = 1;
 
@@ -1594,7 +1656,7 @@ run_one_again:
 		case 0xc000: {	// RJMP -- 1100 kkkk kkkk kkkk
 			get_o12(opcode);
 			STATE("rjmp .%d [%04x]\n", o >> 1, new_pc + o);
-			new_pc = (new_pc + o) % (avr->flashend+1);
+			new_pc = AVR_FLASH_WRAP(avr, new_pc + o);
 			cycle++;
 			TRACE_JUMP();
 		}	break;
@@ -1603,7 +1665,7 @@ run_one_again:
 			get_o12(opcode);
 			STATE("rcall .%d [%04x]\n", o >> 1, new_pc + o);
 			cycle += _avr_push_addr(avr, new_pc);
-			new_pc = (new_pc + o) % (avr->flashend+1);
+			new_pc = AVR_FLASH_WRAP(avr, new_pc + o);
 			// 'rcall .1' is used as a cheap "push 16 bits of room on the stack"
 			if (o != 0) {
 				TRACE_JUMP();

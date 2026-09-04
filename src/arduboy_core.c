@@ -14,6 +14,9 @@
 #include "avr_eeprom.h"
 #include "avr_ioport.h"
 #include "ssd1306_virt.h"
+#ifdef ARDUBOY_JIT
+#include "avr_jit.h"
+#endif
 
 #define AVR_FREQUENCY 16000000u
 #define EEPROM_BYTES 1024u
@@ -184,7 +187,16 @@ int zaurus_arduboy_run_cycles(zaurus_arduboy_t *emu, unsigned cycles)
 	avr = emu->avr;
 	until = avr->cycle + cycles;
 
-#ifdef ARDUBOY_FAST_DISPATCH
+#if defined(ARDUBOY_JIT)
+	/*
+	 * Dynarec path: the JIT run loop owns timer/interrupt/batching (see
+	 * avr_jit.c).  Keep run_cycle_limit at 1 so the interpreter fallback
+	 * single-steps (the JIT run loop, not avr_run_one's internal batching,
+	 * decides block boundaries).
+	 */
+	avr->run_cycle_limit = 1;
+	avr_jit_run(avr, until);
+#elif defined(ARDUBOY_FAST_DISPATCH)
 	/*
 	 * Fast dispatch: let simavr's own intra-call batching (the
 	 * `goto run_one_again` loop, guarded here by run_cycle_limit) run a

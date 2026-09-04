@@ -148,32 +148,44 @@ to act on each case. Do not assume it is the interpreter; on the C750's
 rotated screen the paint path may dominate. Optimize what the HUD points at.
 
 If the HUD shows it is CPU-bound: profiling (host `gprof`) puts
-**`avr_run_one` at ~70% self time**; that is the thing to attack. The designed next optimization is a
-**predecode / direct-threaded interpreter** (Tier 2/3 in
-`doc/arduboy_accel_research.md`):
+**`avr_run_one` at ~70% self time**; that is the thing to attack.
 
-1. After `load_hex`, pre-decode each of the ~16K flash words once into a
-   compact table `{handler_id, d, r, k}` — target **4 bytes/entry** (XScale
-   has 32KB D-cache and **no L2**; a fat table thrashes).
-2. Dispatch via computed `goto` (`&&label`, supported by GCC 2.95/3.4) on
-   `handler_id`, eliminating the per-instruction `switch (opcode & 0xf000)`
-   decode. Reuse simavr's existing operand macros and `_avr_flags_*` helpers
-   so handler bodies are copies of the current `switch` cases (lowest risk).
-3. Handle SPM/self-modifying flash by invalidating the affected table entry on
-   any flash write (Arduboy games almost never SPM, but be safe).
-4. Consider XScale `PLD` prefetch of the next table entry / flash word.
+**Update (Stages 9–11), read before optimizing further:**
+- The device HUD confirmed CPU-bound (`sim≈1.79 MHz`, paint ≈0%), ~9× short of
+  real time. `doc/reliable-solution.md` reviews how comparable emulators
+  (CopperBoy, LuaJIT, 文曲星 Lava/GVmaker, handheld dynarecs) handle this.
+- The interpreter is at its **source-level floor** (Stage 10): the flag math is
+  already compiler-CSE'd, decode is already a jump table, fetch is one load,
+  the jump-wrap modulo is now an AND.
+- **Predecode was implemented and measured to be a net regression here**
+  (+6% instructions, Stage 11) because dispatch is already a jump table — do
+  not re-try it expecting a win.
+- The reliable route to real time is an **AVR→ARMv5 dynarec** (design in
+  `doc/reliable-solution.md` §4). Key constraint: it emits ARM code, so it
+  **cannot be developed or verified in an x86 sandbox** — build/verify it on
+  the Zaurus or a QEMU-ARM/ARMv5 target, using `tools/bench` + the `exer*`
+  fixtures as the bit-identical correctness oracle against the interpreter.
+- **The dynarec scaffolding is already in the tree** (`doc/jit-design.md`,
+  `third_party/simavr/sim/avr_jit.[ch]`, build with `JIT=1`). The
+  architecture-independent half — block cache, block discovery, run loop
+  (batched-timer discipline), interpreter fallback, and the pluggable backend
+  interface — is implemented and **verified bit-identical on x86** with the
+  portable `interp` backend (the block path is genuinely exercised:
+  `interp_run` runs ~239k blocks on exer2). The `interp` backend is for
+  validation only and is slower (it is the interpreter plus framework
+  overhead). **The one thing left is the `arm` backend's `translate()` in
+  `avr_jit.c`** (currently a stub returning 0 → interpreter fallback): emit
+  ARMv5 for a block, map C/Z/N/V→NZCV with dead-flag elimination, call back
+  into simavr for I/O. Grow it opcode-by-opcode, keeping the `exer*`
+  fingerprints identical on the ARM target. That is where the 5–15× comes
+  from.
 
-Expected upside beyond dispatch batching, but it is a larger change. **The
-harness in §4 is exactly what makes it safe** — build it incrementally and
-keep the quiescing ram/fb hashes identical to the reference at every step.
-Broaden the exerciser first if you touch opcodes it doesn't cover (current
-coverage ~50 opcodes; missing e.g. EEPROM ops, WDR, SLEEP, SWAP, BLD/BST,
-IJMP — add them before trusting a predecode of those).
-
-Lower-risk incremental wins also documented in the research note: register
-fast-path in `_avr_get_ram`/`_avr_set_r`, trimming the per-bit I/O IRQ storm,
-and compiling out unused peripherals (USB/UART/TWI) — each independently
-verifiable with the harness.
+Do **not** restart the predecode/direct-threaded interpreter as the next main
+line. Stage 11 already implemented and measured the experiment, and it lost to
+the existing compiler-generated jump-table interpreter. The remaining reliable
+path is the ARMv5 backend for the JIT scaffold. Lower-risk cleanups (e.g.
+compiling out unused peripherals) are still allowed, but they should be treated
+as small side quests and gated by the same `tools/bench` fingerprints.
 
 ## 6. Files changed by stages 4–5 (quick map)
 ```

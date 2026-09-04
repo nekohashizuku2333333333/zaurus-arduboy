@@ -41,6 +41,8 @@ extern "C" {
 #endif
 #define PAINT_INTERVAL_US 33333UL
 #define MAX_ELAPSED_US 100000UL
+/* Target wall-time budget per emulation tick, to keep input responsive. */
+#define INPUT_TICK_MS 25UL
 #define DRAW_W (ZAURUS_ARDUBOY_WIDTH * SCALE)
 #define DRAW_H (ZAURUS_ARDUBOY_HEIGHT * SCALE)
 #define DRAW_X ((SCREEN_W - DRAW_W) / 2)
@@ -93,7 +95,7 @@ public:
 		  lastTickUsec(0), nextPaintUsec(0), cycleRemainder(0),
 		  framePending(0),
 		  statEmuUs(0), statPaintUs(0), statCycles(0), statFrames(0),
-		  statWindowStart(0),
+		  statWindowStart(0), simCyclesPerMs(2000),
 		  displayImage(DRAW_W, DRAW_H, 16), displayPixmap(DRAW_W, DRAW_H)
 	{
 		statLine[0] = 0;
@@ -354,6 +356,17 @@ private:
 	unsigned long statWindowStart;
 	char statLine[160];
 
+	/*
+	 * Adaptive input-latency cap.  When the emulator can't run real time,
+	 * a single run_cycles() call would block the Qt event loop for its
+	 * whole duration, so keys are only sampled once per call.  We bound
+	 * each call to ~INPUT_TICK_MS of wall time by capping the cycle count
+	 * to the measured emulation rate.  This does NOT change game speed
+	 * (that is fixed by how fast the core runs); it only makes the event
+	 * loop -- and thus input -- run ~1000/INPUT_TICK_MS times per second.
+	 */
+	unsigned long simCyclesPerMs;   /* measured emulation rate (>=1) */
+
 	void tick()
 	{
 		unsigned long now;
@@ -379,6 +392,22 @@ private:
 			(unsigned long long)cycleRemainder;
 		cycles = (unsigned)(total / 1000000ULL);
 		cycleRemainder = (unsigned long)(total % 1000000ULL);
+		{
+			/*
+			 * Cap this call to ~INPUT_TICK_MS of wall time so the Qt
+			 * event loop (and input) runs frequently.  Excess owed
+			 * cycles are dropped, not banked -- the game already runs
+			 * below real time, so banking would only spiral the debt.
+			 * Inert when the core keeps up (cap >> cycles requested).
+			 */
+			unsigned long cap = INPUT_TICK_MS * simCyclesPerMs;
+			if (cap < 4000UL)
+				cap = 4000UL;
+			if (cycles > cap) {
+				cycles = (unsigned)cap;
+				cycleRemainder = 0;
+			}
+		}
 		if (cycles) {
 			unsigned long a = nowUsec();
 			zaurus_arduboy_run_cycles(emu, cycles);
@@ -421,6 +450,14 @@ private:
 		win = elapsedUsec(statWindowStart, now);
 		if (win < 1000000UL)
 			return;
+		/* Refresh the measured emulation rate used by the input cap. */
+		if (statEmuUs > 0) {
+			unsigned long rate =
+				(unsigned long)((statCycles * 1000ULL) / statEmuUs);
+			if (rate < 1UL)
+				rate = 1UL;
+			simCyclesPerMs = rate;
+		}
 		{
 			unsigned long simk = statEmuUs ?
 				(unsigned long)((statCycles) / (statEmuUs ? statEmuUs : 1)) : 0;

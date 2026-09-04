@@ -19,6 +19,15 @@ if [ "${FAST_DISPATCH:-0}" = "1" ]; then
 	QT_DEFS="$QT_DEFS -DARDUBOY_FAST_DISPATCH"
 	echo "build: ARDUBOY_FAST_DISPATCH enabled"
 fi
+
+# JIT=1 builds the dynarec scaffolding (implies fast dispatch). The arm
+# backend is a stub until implemented on target, so this currently runs the
+# interp backend + interpreter fallback -- correct but not yet fast. See
+# doc/jit-design.md.
+if [ "${JIT:-0}" = "1" ]; then
+	QT_DEFS="$QT_DEFS -DARDUBOY_FAST_DISPATCH -DARDUBOY_JIT"
+	echo "build: ARDUBOY_JIT enabled"
+fi
 CORE_CFLAGS="-pipe -O3 -fomit-frame-pointer -fno-strict-aliasing -Wall -W -std=gnu99 $QT_DEFS -mcpu=xscale -mtune=xscale -mhard-float"
 CXXFLAGS="-pipe -O2 -fomit-frame-pointer -Wall -W $QT_DEFS -fno-exceptions -fno-rtti"
 
@@ -46,6 +55,7 @@ $SIMAVR/sim/sim_io.c
 $SIMAVR/sim/sim_irq.c
 $SIMAVR/sim/sim_utils.c
 $SIMAVR/sim/sim_vcd_file.c
+$SIMAVR/sim/avr_jit.c
 $SIMAVR/examples/parts/ssd1306_virt.c
 src/hex_loader.c
 src/arduboy_core.c
