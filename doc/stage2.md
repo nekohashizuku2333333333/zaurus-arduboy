@@ -65,11 +65,41 @@ The `Keys` menu uses a compact two-column layout to fit the 640x480
 Qtopia screen with the same `song` QPF font family used by the
 Zaurus markdown writer test app.
 
-`Speed` toggles between `Light` and `Boost`.  On ARM, `Light` is the
-default and runs 30000 AVR cycles per UI tick to keep Qtopia responsive;
-`Boost` raises that to 90000 cycles per tick for faster game progress.
-QVFb keeps the desktop test path at the full nominal 16 MHz / 60 Hz
-budget.
+`Speed` toggles between `Light` and `Boost`.  The simulator loop is
+driven by real elapsed time instead of a fixed cycles-per-tick constant.
+Each timer callback computes the owed AVR cycles as elapsed time times
+the selected AVR clock.  `Boost` targets the Arduboy's nominal 16 MHz;
+`Light` targets 8 MHz as a lower-CPU fallback if the desktop becomes too
+sluggish.  Display upload is decoupled and limited to about 30 fps, so
+the frontend can drop visual frames while continuing to spend CPU time on
+AVR execution.
+
+The ARM paint path now keeps a reusable 16bpp RGB565 `QImage` plus a
+cached `QPixmap`.  This matches the C750 16bpp framebuffer better than
+the earlier 32bpp intermediate image and avoids a per-frame 32-to-16bpp
+conversion inside Qt/Embedded.  The frontend also keeps the previous
+1024-byte SSD1306 frame and skips image expansion and repaint entirely
+when the emulated display contents have not changed.
+
+The normal ARM/QWS game refresh path probes `QDirectPainter` to copy the
+16bpp frame image directly into the Qt/Embedded framebuffer.  The direct
+path is only used when the reported screen depth is 16bpp and
+`transformOrientation()` is zero.  On rotated/transformed screens, such
+as the C750 landscape Qtopia setup observed during real-device testing,
+the code falls back to Qt's transformed `QPainter::drawPixmap()` path so
+the image is not written sideways or at the wrong physical offset.
+
+For real-device keyboard diagnosis, the Keys page shows the last Qt key
+code and ASCII value received by the widget.  The input mapper tries
+both `QKeyEvent::key()` and normalized ASCII letters, which helps on
+older Qtopia key drivers that report alphabetic keys inconsistently.
+Button changes are also pushed into simavr through the port
+`PIN_ALL_IN` IRQ after updating the external active-low pull value; this
+avoids relying on a later lazy PIN read to notice the input change.
+Cycle stepping uses simavr's `avr->cycle` counter as the stopping
+condition.  One `avr_run()` call executes one AVR instruction and may
+advance several cycles, so looping by requested cycle count would
+over-step and add unnecessary dispatch overhead.
 
 EEPROM save path:
 
@@ -152,6 +182,13 @@ Provide a local __sync_synchronize() stub for older ARM gcc output.
 Use -Wl,--allow-shlib-undefined so libqte's libjpeg runtime dependency is not resolved from the incompatible 3.4 VFP sysroot.
 Replace QFileDialog with the in-app browser because libqte.so in this SDK exports QDialog but not QFileDialog.
 Use cached QImage/QPixmap frame surfaces and clipped paint regions instead of drawing thousands of QRect blocks and repainting the toolbar on every frame.
+Use a 16bpp RGB565 frame image and skip repaint when the 1024-byte SSD1306 frame is unchanged.
+Compile the C simulator core with -O3 -fomit-frame-pointer -fno-strict-aliasing -mcpu=xscale -mtune=xscale.
+Use QDirectPainter for the live ARM/QWS game frame blit; fall back to QPainter/QPixmap when unavailable.
+Show last received key/ascii codes on the Keys page and map normalized ASCII as a fallback.
+Drive AVR execution from elapsed real time: Boost = 16 MHz, Light = 8 MHz, display upload capped near 30 fps.
+Raise simavr IOPORT_IRQ_PIN_ALL_IN after every button state change so Arduboy inputs propagate immediately.
+Stop `zaurus_arduboy_run_cycles()` by target `avr->cycle`, not by raw `avr_run()` call count.
 ```
 
 Final binary:

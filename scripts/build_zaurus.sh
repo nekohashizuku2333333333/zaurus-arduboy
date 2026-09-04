@@ -10,8 +10,8 @@ set -e
 SIMAVR=third_party/simavr
 INCLUDES="-Iinclude -Isrc -I$SIMAVR -I$SIMAVR/sim -I$SIMAVR/examples/parts -I$QPESDK/include -I$QTDIR/include"
 QT_DEFS="-DQT_QWS_SL5XXX -DQT_QWS_CUSTOM -DQWS -DQT_NO_PROPERTIES -DQT_NO_DRAGANDDROP -DNO_DEBUG"
-CORE_CFLAGS="-pipe -O2 -Wall -W -std=gnu99 $QT_DEFS -mcpu=xscale -mhard-float"
-CXXFLAGS="-pipe -O2 -Wall -W $QT_DEFS -fno-exceptions -fno-rtti"
+CORE_CFLAGS="-pipe -O3 -fomit-frame-pointer -fno-strict-aliasing -Wall -W -std=gnu99 $QT_DEFS -mcpu=xscale -mtune=xscale -mhard-float"
+CXXFLAGS="-pipe -O2 -fomit-frame-pointer -Wall -W $QT_DEFS -fno-exceptions -fno-rtti"
 
 SIM_SRCS="
 $SIMAVR/cores/sim_mega32u4.c

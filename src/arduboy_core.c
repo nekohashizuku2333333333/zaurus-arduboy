@@ -38,11 +38,16 @@ static int write_flash_chunk(uint32_t address, const uint8_t *data,
 static void set_external_port(avr_t *avr, char port, uint8_t mask, uint8_t value)
 {
 	avr_ioport_external_t ext;
+	avr_irq_t *irq;
 	memset(&ext, 0, sizeof(ext));
 	ext.name = port;
 	ext.mask = mask;
 	ext.value = value;
 	avr_ioctl(avr, AVR_IOCTL_IOPORT_SET_EXTERNAL(port), &ext);
+	irq = avr_io_getirq(avr, AVR_IOCTL_IOPORT_GETIRQ(port),
+			    IOPORT_IRQ_PIN_ALL_IN);
+	if (irq)
+		avr_raise_irq(irq, value);
 }
 
 static void update_button_port(zaurus_arduboy_t *emu, char port,
@@ -141,10 +146,11 @@ void zaurus_arduboy_set_buttons(zaurus_arduboy_t *emu, unsigned mask)
 
 int zaurus_arduboy_run_cycles(zaurus_arduboy_t *emu, unsigned cycles)
 {
-	unsigned i;
+	avr_cycle_count_t until;
 	if (!emu || !emu->avr)
 		return -1;
-	for (i = 0; i < cycles; i++) {
+	until = emu->avr->cycle + cycles;
+	while (emu->avr->cycle < until) {
 		int state = avr_run(emu->avr);
 		if (state == cpu_Done || state == cpu_Crashed)
 			return state;
