@@ -307,3 +307,31 @@ SHA-256:
 da0106473b443c62fd0a00957b96763d66a5494d4d839f47d6b583c781cefbe4  dist/zaurusbench_armjit_logic2
 465d87120ec59c8e1bf9f8e493df6a5264626e22f4c96ae7545b3a24fd176661  dist/zaurusarduboy_armjit_logic2_0.1_arm.ipk
 ```
+
+Runtime backend override:
+
+```sh
+ARDUBOY_JIT_BACKEND=interp ./zaurusbench_armjit_logic2 tests/fixtures/exer2.hex 1000000 266667
+ARDUBOY_JIT_BACKEND=arm ./zaurusbench_armjit_logic2 tests/fixtures/exer2.hex 1000000 266667
+```
+
+If the default ARM backend crashes on the device, use
+`ARDUBOY_JIT_BACKEND=interp` with the same binary to confirm that the package,
+ROM loading, and Qt frontend still work. Use `ARDUBOY_JIT_BACKEND=arm`
+explicitly when comparing native counters after later experiments.
+
+The backend override was then built into a third experimental package:
+
+```text
+dist/zaurusarduboy_armjit_logic3
+dist/zaurusbench_armjit_logic3
+dist/zaurusarduboy_armjit_logic3_0.1_arm.ipk
+```
+
+SHA-256:
+
+```text
+f30f3e0914547009d9ed0ac21323faf95d4bc24664c1d2da424fa1b2a594413f  dist/zaurusarduboy_armjit_logic3
+6eb34bd636be6d2586652c3b9e515b9e3fa9af807bfdab803c1643ce46e6c081  dist/zaurusbench_armjit_logic3
+d51b1c00b7dbf31a55cee70c34149975a2e8dc4a5276f375795a8000db4592b1  dist/zaurusarduboy_armjit_logic3_0.1_arm.ipk
+```

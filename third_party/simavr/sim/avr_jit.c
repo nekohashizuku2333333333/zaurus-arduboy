@@ -72,8 +72,13 @@ void avr_jit_get_stats(avr_jit_stats_t *out)
 
 void avr_jit_init(avr_t *avr)
 {
+	const char *backend_env = getenv("ARDUBOY_JIT_BACKEND");
 	(void)g_offsets;	/* used by the ARM backend; quiet non-ARM builds */
-	if (!g_backend) {
+	if (backend_env && strcmp(backend_env, "interp") == 0) {
+		g_backend = &avr_jit_backend_interp;
+	} else if (backend_env && strcmp(backend_env, "arm") == 0) {
+		g_backend = &avr_jit_backend_arm;
+	} else if (!g_backend) {
 #if defined(__arm__) || defined(__ARMEL__)
 		g_backend = &avr_jit_backend_arm;
 #else
