@@ -281,3 +281,29 @@ Expected signal on the Zaurus: `backend=arm`, `native>0`, and matching
 immediately, first suspects are the Linux 2.4 `cacheflush` SWI or an ARM
 instruction encoding typo; if `native=0`, the ROM simply has too few matching
 all-logical blocks and the next opcode wave should add `ORI`/`ANDI`/arithmetic.
+
+## Native immediate logical-op update
+
+`ORI` and `ANDI` are now included in the same native logical-op path:
+
+- `ORI`: load `data[16+d]`, OR with immediate `K`, store back, update
+  `Z/N/V/S`.
+- `ANDI`: load `data[16+d]`, AND with immediate `K`, store back, update
+  `Z/N/V/S`.
+
+Remote ARM OABI/Qtopia build passed and produced the second experimental
+package:
+
+```text
+dist/zaurusarduboy_armjit_logic2
+dist/zaurusbench_armjit_logic2
+dist/zaurusarduboy_armjit_logic2_0.1_arm.ipk
+```
+
+SHA-256:
+
+```text
+945e8163828c2e49f24328ab4b6d4565d24167b985f4da476bf50c49c455c858  dist/zaurusarduboy_armjit_logic2
+da0106473b443c62fd0a00957b96763d66a5494d4d839f47d6b583c781cefbe4  dist/zaurusbench_armjit_logic2
+465d87120ec59c8e1bf9f8e493df6a5264626e22f4c96ae7545b3a24fd176661  dist/zaurusarduboy_armjit_logic2_0.1_arm.ipk
+```

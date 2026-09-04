@@ -428,6 +428,10 @@ static int arm_can_translate_op(uint16_t op)
 		return 1;
 	if ((op & 0xfc00) == 0x2800)	/* OR */
 		return 1;
+	if ((op & 0xf000) == 0x6000)	/* ORI */
+		return 1;
+	if ((op & 0xf000) == 0x7000)	/* ANDI */
+		return 1;
 	return 0;
 }
 
@@ -439,6 +443,18 @@ static int arm_emit_op(arm_emit_t *e, uint16_t op)
 		k = avr_ldi_k(op);
 		return arm_emit_word(e, arm_mov_imm(5, k)) &&
 		       arm_emit_word(e, arm_mem(0, 1, 4, 5, d));
+	}
+
+	if ((op & 0xf000) == 0x6000 ||		/* ORI */
+	    (op & 0xf000) == 0x7000) {		/* ANDI */
+		int opcode = ((op & 0xf000) == 0x6000) ? 12 : 0;
+		d = (uint8_t)(16 + ((op >> 4) & 0x0f));
+		k = avr_ldi_k(op);
+		return arm_emit_word(e, arm_mem(1, 1, 4, 5, d)) &&
+		       arm_emit_word(e, arm_mov_imm(6, k)) &&
+		       arm_emit_word(e, arm_dp_reg(opcode, 5, 5, 6)) &&
+		       arm_emit_word(e, arm_mem(0, 1, 4, 5, d)) &&
+		       arm_emit_logical_flags(e);
 	}
 
 	d = avr_rd(op);
