@@ -129,13 +129,17 @@ static int jit_is_simple(uint16_t op)
 {
 	switch (op & 0xf000) {
 	case 0x0000:	/* NOP / CPC / SBC / ADD (0x0000 has MOVW/MUL too) */
+		if (op == 0x0000) /* NOP */
+			return 1;
+		if ((op & 0xff00) == 0x0100) /* MOVW */
+			return 1;
 		switch (op & 0xfc00) {
 		case 0x0400: /* CPC */
 		case 0x0800: /* SBC */
 		case 0x0c00: /* ADD */
 			return 1;
 		}
-		return 0;	/* NOP/MOVW/MULS/MUL -> let interpreter handle */
+		return 0;	/* MULS/MUL/FMUL -> let interpreter handle */
 	case 0x1000:
 		switch (op & 0xfc00) {
 		case 0x1400: /* CP  */
@@ -423,6 +427,10 @@ static uint8_t avr_ldi_k(uint16_t op)
 
 static int arm_can_translate_op(uint16_t op)
 {
+	if (op == 0x0000)		/* NOP */
+		return 1;
+	if ((op & 0xff00) == 0x0100)	/* MOVW */
+		return 1;
 	if ((op & 0xf000) == 0xe000)	/* LDI */
 		return 1;
 	if ((op & 0xfc00) == 0x2c00)	/* MOV */
@@ -443,6 +451,18 @@ static int arm_can_translate_op(uint16_t op)
 static int arm_emit_op(arm_emit_t *e, uint16_t op)
 {
 	uint8_t d, r, k;
+	if (op == 0x0000)		/* NOP */
+		return 1;
+
+	if ((op & 0xff00) == 0x0100) {		/* MOVW */
+		d = (uint8_t)(((op >> 4) & 0x0f) << 1);
+		r = (uint8_t)((op & 0x0f) << 1);
+		return arm_emit_word(e, arm_mem(1, 1, 4, 5, r)) &&
+		       arm_emit_word(e, arm_mem(1, 1, 4, 6, (uint8_t)(r + 1))) &&
+		       arm_emit_word(e, arm_mem(0, 1, 4, 5, d)) &&
+		       arm_emit_word(e, arm_mem(0, 1, 4, 6, (uint8_t)(d + 1)));
+	}
+
 	if ((op & 0xf000) == 0xe000) {		/* LDI */
 		d = (uint8_t)(16 + ((op >> 4) & 0x0f));
 		k = avr_ldi_k(op);

@@ -335,3 +335,32 @@ f30f3e0914547009d9ed0ac21323faf95d4bc24664c1d2da424fa1b2a594413f  dist/zaurusard
 6eb34bd636be6d2586652c3b9e515b9e3fa9af807bfdab803c1643ce46e6c081  dist/zaurusbench_armjit_logic3
 d51b1c00b7dbf31a55cee70c34149975a2e8dc4a5276f375795a8000db4592b1  dist/zaurusarduboy_armjit_logic3_0.1_arm.ipk
 ```
+
+## Native NOP/MOVW update
+
+`NOP` and `MOVW` are now allowed in discovered simple blocks and translated by
+the ARM backend:
+
+- `NOP`: emits no register operation; it is accounted for by the block cycle
+  epilogue.
+- `MOVW`: copies two adjacent AVR register bytes from `r:r+1` to `d:d+1`;
+  no flags are modified.
+
+This is a conservative coverage increase because both opcodes are single-word,
+one-cycle, straight-line instructions with no I/O or flag side effects.
+
+Remote ARM OABI/Qtopia build passed and produced:
+
+```text
+dist/zaurusarduboy_armjit_logic4
+dist/zaurusbench_armjit_logic4
+dist/zaurusarduboy_armjit_logic4_0.1_arm.ipk
+```
+
+SHA-256:
+
+```text
+578b119cf52f9974c487dc0ba7a26986cb2aa9e8bd6f326f29d7d1b55d5887c7  dist/zaurusarduboy_armjit_logic4
+afe9cee8f92a95154dfb56fd667a46e417c7e6d2df37e44563e33df0580735b3  dist/zaurusbench_armjit_logic4
+1ad1535a38f31e48a5014a8ab1d74f3288998135e007c0cbeff7e3bfb81ff3d1  dist/zaurusarduboy_armjit_logic4_0.1_arm.ipk
+```
