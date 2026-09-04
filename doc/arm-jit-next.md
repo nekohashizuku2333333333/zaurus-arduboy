@@ -457,3 +457,60 @@ a9c1e87080f1bab42c6060eb2acf0cdac268ed172082cd472471826047b94b7f  dist/zaurusben
 f9b93861db5f88ff227cb3f9075c1f87ee95b38b8c4867d20212c3c5083407a8  dist/zaurusjit_scan_armjit_logic6
 4485322fc666790348a06f28ae79bee62c5616c25ad429f1ae128dffe744e73c  dist/zaurusarduboy_armjit_logic6_0.1_arm.ipk
 ```
+
+## ARM native-prefix fix and OLED transaction dirtying
+
+Device HUD after the logic6 package:
+
+```text
+sim=1.05MHz emu=96% paint=0% fps=0 jit=arm native=0 fallback=113122675
+```
+
+This proves the current bottleneck is no longer the framebuffer path:
+`paint=0%` says the UI/blit side is idle, while `emu=96%` and `sim=1.05MHz`
+say the AVR interpreter still consumes almost the whole tick budget. The more
+important clue is `jit=arm native=0`: the ARM backend was selected, but every
+discovered block still ran through fallback.
+
+The ARM backend used to require the entire discovered simple block to be
+native-translatable. In real Arduboy code a short native-capable prefix is often
+followed by an arithmetic, branch, call, indexed load/store, or other opcode
+that the first ARM emitter wave does not yet support. That made
+`arm_translate()` reject the whole block. It now translates the longest
+native-capable prefix and shortens `pc_end`/`n_words` to that prefix. Expected
+device-side sign: `native` should become non-zero and `fallback` should grow
+more slowly.
+
+The OLED dirty policy also now handles partial SSD1306 transfers better. The
+1024-byte full-frame gate is still present, but CS rising after a data
+transaction also marks the display dirty. That prevents long `fps=0` periods
+for games that update the SSD1306 in smaller chunks while still avoiding the
+old per-byte repaint storm.
+
+Local validation:
+
+```text
+exer3 @ 2133336 cycles: frames=1 fbhash=5fb232656e776ddb
+exer2 static scan: native_words=114, coverage=37.0%
+```
+
+The ARM native code still must be validated on the Zaurus itself; x86 builds
+intentionally use the interpreter backend for this scaffold.
+
+Remote ARM OABI/Qtopia build passed and produced:
+
+```text
+dist/zaurusarduboy_armjit_logic7
+dist/zaurusbench_armjit_logic7
+dist/zaurusjit_scan_armjit_logic7
+dist/zaurusarduboy_armjit_logic7_0.1_arm.ipk
+```
+
+SHA-256:
+
+```text
+9f184a31dfbe12231e1c54f47fe4a467c4e81695344b63e4c2cc0fe7e63181fb  dist/zaurusarduboy_armjit_logic7
+e385328d76c92c7a63a933d10c0c5f1ab9d4e1d394af5c6e5d8276400bafa11d  dist/zaurusbench_armjit_logic7
+f9b93861db5f88ff227cb3f9075c1f87ee95b38b8c4867d20212c3c5083407a8  dist/zaurusjit_scan_armjit_logic7
+88fe52969a66cd3bf22703e4fc2690d2c8672da277c0ca453cd8bc0938f769ee  dist/zaurusarduboy_armjit_logic7_0.1_arm.ipk
+```

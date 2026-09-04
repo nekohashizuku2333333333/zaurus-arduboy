@@ -517,16 +517,24 @@ static int arm_translate(avr_t *avr, avr_jit_block_t *blk)
 	uint32_t data_off = (uint32_t)g_offsets.data;
 	uint32_t cyc_off = (uint32_t)g_offsets.cycle;
 	size_t cap;
+	uint16_t words = 0;
 
-	if (!blk || !blk->n_words || blk->n_words > 255)
+	if (!blk || !blk->n_words)
 		return 0;
 	if (data_off > 0xfff || cyc_off + 4 > 0xfff || g_offsets.sreg + 7 > 0xfff)
 		return 0;
 	for (p = blk->pc_start; p < blk->pc_end; p += 2) {
 		uint16_t op = avr->flash[p] | (avr->flash[p + 1] << 8);
 		if (!arm_can_translate_op(op))
-			return 0;
+			break;
+		words++;
+		if (words >= 255)
+			break;
 	}
+	if (!words)
+		return 0;
+	blk->n_words = words;
+	blk->pc_end = blk->pc_start + ((avr_flashaddr_t)words * 2);
 
 	cap = 64 + (size_t)blk->n_words * 64;
 	buf = (arm_code_buf_t *)calloc(1, sizeof(*buf));

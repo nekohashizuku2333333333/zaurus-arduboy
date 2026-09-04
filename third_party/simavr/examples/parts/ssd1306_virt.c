@@ -37,6 +37,7 @@ static void
 ssd1306_write_data (ssd1306_t *part)
 {
 	part->vram[part->cursor.page][part->cursor.column] = part->spi_data;
+	part->transaction_data = 1;
 	if (part->frame_bytes < SSD1306_VIRT_COLUMNS * SSD1306_VIRT_PAGES)
 		part->frame_bytes++;
 	switch (part->addr_mode)
@@ -400,7 +401,12 @@ static void
 ssd1306_cs_hook (struct avr_irq_t * irq, uint32_t value, void * param)
 {
 	ssd1306_t * p = (ssd1306_t*) param;
+	uint8_t old = p->cs_pin;
 	p->cs_pin = value & 0xFF;
+	if (!old && p->cs_pin && p->transaction_data) {
+		p->transaction_data = 0;
+		ssd1306_set_flag (p, SSD1306_FLAG_DIRTY, 1);
+	}
 	//printf ("SSD1306: CHIP SELECT:  0x%02x\n", value);
 
 }
@@ -431,6 +437,7 @@ ssd1306_reset_hook (struct avr_irq_t * irq, uint32_t value, void * param)
 		part->cursor.column = 0;
 		part->cursor.page = 0;
 		part->frame_bytes = 0;
+		part->transaction_data = 0;
 		part->flags = 0;
 		part->command_register = 0x00;
 		part->contrast_register = 0x7F;
