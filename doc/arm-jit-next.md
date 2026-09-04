@@ -226,3 +226,58 @@ Expected before the real ARM emitter lands: `backend=interp`, `native=0`, and
 the same `fbhash/statehash/ramhash` as the interpreter. Once `arm_translate()`
 starts emitting native code, `native` should become non-zero and `sim_mhz`
 should move upward.
+
+## Native logical-op emitter update
+
+The first ARMv5 emitter is now implemented behind `avr_jit_backend_arm`:
+
+- ARM builds default to `backend=arm` when `JIT=1` is enabled.
+- x86 builds still default to `backend=interp`, so desktop fingerprints remain
+  a safe regression gate.
+- Native blocks are emitted only when the entire discovered block is made of
+  `LDI`, `MOV`, `AND`, `EOR`, and `OR`.
+- Logical ops write AVR `Z`, `N`, `V=0`, and `S=N` flags directly into
+  `avr->sreg[]`.
+- Blocks longer than 255 one-cycle instructions are declined for now, because
+  the first cycle epilogue uses a simple ARM immediate add.
+- The shared run loop dispatches a native block only when `cycle + n_words`
+  fits before the current timer deadline. Otherwise it single-steps via
+  `avr_run_one()`.
+
+Remote ARM OABI/Qtopia build:
+
+```sh
+cd /tmp/arduboy-qtopia-qvfb/app
+export PATH=/opt/cross/arm/2.95.3-2.15/bin:/opt/cross/arm/3.4.6-xscale-softvfp-akita/bin:/opt/native/i686/3.4.5-2.2.5/bin:$PATH
+JIT=1 sh scripts/build_zaurus.sh
+BIN=zaurusarduboy OUT=dist/zaurusarduboy_armjit_logic_0.1_arm.ipk sh scripts/package_ipk.sh
+```
+
+Pulled local artifacts:
+
+```text
+dist/zaurusarduboy_armjit_logic
+dist/zaurusbench_armjit_logic
+dist/zaurusarduboy_armjit_logic_0.1_arm.ipk
+```
+
+SHA-256:
+
+```text
+f1bd98069d28b693bff1a7a7e8252920538335cea5da0bab4f72130e90f6cbda  dist/zaurusarduboy_armjit_logic
+9face92231227dc2eef154915e3d2fb563129b1f010f0b4467d35329d97b8671  dist/zaurusbench_armjit_logic
+3aefbb515a2de120849f422e13946afdcd07e62d23bc8f77a289da0d97d1388c  dist/zaurusarduboy_armjit_logic_0.1_arm.ipk
+```
+
+Device validation target:
+
+```sh
+./zaurusbench_armjit_logic tests/fixtures/exer2.hex 1000000 266667
+./zaurusbench_armjit_logic tests/fixtures/exer3.hex 1000000 266667
+```
+
+Expected signal on the Zaurus: `backend=arm`, `native>0`, and matching
+`fbhash`/`ramhash` against the interpreter package. If the process crashes
+immediately, first suspects are the Linux 2.4 `cacheflush` SWI or an ARM
+instruction encoding typo; if `native=0`, the ROM simply has too few matching
+all-logical blocks and the next opcode wave should add `ORI`/`ANDI`/arithmetic.
