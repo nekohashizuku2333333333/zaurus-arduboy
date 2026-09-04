@@ -49,7 +49,7 @@ OBJS := $(SIM_SRCS:.c=.o) $(CORE_SRCS:.c=.o)
 
 .PHONY: all clean
 
-all: libzaurusarduboy.a tools/dump_frame tools/bench
+all: libzaurusarduboy.a tools/dump_frame tools/bench tools/jit_scan
 
 libzaurusarduboy.a: $(OBJS)
 	$(AR) rcs $@ $(OBJS)
@@ -60,5 +60,8 @@ tools/dump_frame: tools/dump_frame.o libzaurusarduboy.a
 tools/bench: tools/bench.o libzaurusarduboy.a
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ tools/bench.o libzaurusarduboy.a -lm
 
+tools/jit_scan: tools/jit_scan.o
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ tools/jit_scan.o
+
 clean:
-	rm -f $(OBJS) tools/dump_frame.o tools/bench.o libzaurusarduboy.a tools/dump_frame tools/bench
+	rm -f $(OBJS) tools/dump_frame.o tools/bench.o tools/jit_scan.o libzaurusarduboy.a tools/dump_frame tools/bench tools/jit_scan

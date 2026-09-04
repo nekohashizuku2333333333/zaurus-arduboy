@@ -1,6 +1,7 @@
 *.o
 *.a
 tools/dump_frame
+tools/jit_scan
 /zaurusarduboy
 /zaurusbench
 /tmp/

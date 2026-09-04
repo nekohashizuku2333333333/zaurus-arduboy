@@ -364,3 +364,52 @@ SHA-256:
 afe9cee8f92a95154dfb56fd667a46e417c7e6d2df37e44563e33df0580735b3  dist/zaurusbench_armjit_logic4
 1ad1535a38f31e48a5014a8ab1d74f3288998135e007c0cbeff7e3bfb81ff3d1  dist/zaurusarduboy_armjit_logic4_0.1_arm.ipk
 ```
+
+## Static coverage scanner
+
+`tools/jit_scan.c` is now available for choosing the next opcode wave from a
+real `.hex` instead of guessing. It parses Intel HEX directly, skips the second
+word of 32-bit AVR instructions, and reports:
+
+- total present flash words;
+- words that the broad straight-line discovery considers simple;
+- words currently covered by the ARM backend;
+- native block count/length;
+- the top opcode families that break native blocks.
+
+Desktop usage:
+
+```sh
+make JIT=1
+./tools/jit_scan tests/fixtures/exer2.hex
+```
+
+Observed fixture output:
+
+```text
+exer2: words=308 simple=60.4% native=37.0%; top blockers: JMP, other, ADC, ADD, BR/skip, SUBI, SBCI
+exer3: words=91 simple=22.0% native=16.5%; top blockers: JMP, other, BR/skip, CALL, ADD, SUBI, SBCI
+```
+
+The remote build script also emits `zaurusjit_scan` next to `zaurusbench`.
+Because this helper is standalone and does not link Qt, it is compiled with
+soft-float plus `--no-warn-mismatch` to avoid the old SDK's FPA attribute
+friction.
+
+Remote ARM OABI/Qtopia build passed and produced:
+
+```text
+dist/zaurusarduboy_armjit_logic5
+dist/zaurusbench_armjit_logic5
+dist/zaurusjit_scan_armjit_logic5
+dist/zaurusarduboy_armjit_logic5_0.1_arm.ipk
+```
+
+SHA-256:
+
+```text
+578b119cf52f9974c487dc0ba7a26986cb2aa9e8bd6f326f29d7d1b55d5887c7  dist/zaurusarduboy_armjit_logic5
+afe9cee8f92a95154dfb56fd667a46e417c7e6d2df37e44563e33df0580735b3  dist/zaurusbench_armjit_logic5
+f9b93861db5f88ff227cb3f9075c1f87ee95b38b8c4867d20212c3c5083407a8  dist/zaurusjit_scan_armjit_logic5
+bcf4fdd37ae2e71c772f6739d3ab6adc0524175af1aba118eb9f97971c1fed53  dist/zaurusarduboy_armjit_logic5_0.1_arm.ipk
+```

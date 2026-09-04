@@ -81,6 +81,13 @@ if [ "${BUILD_BENCH:-1}" = "1" ]; then
 	$CORE_CC $CORE_CFLAGS $INCLUDES -o zaurusbench tools/bench.c \
 		libzaurusarduboy.a -Wl,--no-warn-mismatch -lm || \
 		echo "WARN: zaurusbench build failed (non-fatal)"
+
+	echo "CC tools/jit_scan.c -> zaurusjit_scan"
+	$CORE_CC -pipe -O2 -fomit-frame-pointer -Wall -W -std=gnu99 \
+		-mcpu=xscale -mtune=xscale -msoft-float \
+		-Iinclude -Isrc -o zaurusjit_scan tools/jit_scan.c \
+		-Wl,--no-warn-mismatch || \
+		echo "WARN: zaurusjit_scan build failed (non-fatal)"
 fi
 
 echo "CXX src/zaurus_qt_main.cpp"
