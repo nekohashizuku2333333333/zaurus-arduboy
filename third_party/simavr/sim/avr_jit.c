@@ -15,8 +15,18 @@
 #include "sim_cycle_timers.h"	/* avr_cycle_timer_process */
 #include "sim_interrupts.h"	/* avr_service_interrupts */
 
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(__arm__) || defined(__ARMEL__)
+#include <sys/mman.h>
+#include <unistd.h>
+#ifndef MAP_ANONYMOUS
+#ifdef MAP_ANON
+#define MAP_ANONYMOUS MAP_ANON
+#endif
+#endif
+#endif
 
 #ifdef ARDUBOY_JIT
 
@@ -25,8 +35,38 @@
 static avr_jit_block_t **g_cache;	/* indexed by pc>>1 */
 static uint32_t          g_cache_words;
 static const avr_jit_backend_t *g_backend;
+static avr_jit_stats_t   g_stats;
+
+typedef struct jit_offsets_t {
+	size_t data;
+	size_t sreg;
+	size_t cycle;
+	size_t pc;
+	size_t state;
+	size_t block_pc_end;
+	size_t block_n_words;
+} jit_offsets_t;
+
+static const jit_offsets_t g_offsets = {
+	offsetof(avr_t, data),
+	offsetof(avr_t, sreg),
+	offsetof(avr_t, cycle),
+	offsetof(avr_t, pc),
+	offsetof(avr_t, state),
+	offsetof(avr_jit_block_t, pc_end),
+	offsetof(avr_jit_block_t, n_words)
+};
 
 void avr_jit_set_backend(const avr_jit_backend_t *b) { g_backend = b; }
+
+void avr_jit_get_stats(avr_jit_stats_t *out)
+{
+	if (!out)
+		return;
+	*out = g_stats;
+	out->cache_words = g_cache_words;
+	out->backend_name = g_backend ? g_backend->name : "none";
+}
 
 void avr_jit_init(avr_t *avr)
 {
@@ -34,6 +74,9 @@ void avr_jit_init(avr_t *avr)
 		g_backend = &avr_jit_backend_interp;
 	g_cache_words = (avr->flashend >> 1) + 1;
 	g_cache = (avr_jit_block_t **)calloc(g_cache_words, sizeof(*g_cache));
+	memset(&g_stats, 0, sizeof(g_stats));
+	g_stats.cache_words = g_cache_words;
+	g_stats.backend_name = g_backend ? g_backend->name : "none";
 }
 
 void avr_jit_flush(void)
@@ -136,6 +179,7 @@ static avr_jit_block_t *jit_lookup(avr_t *avr, avr_flashaddr_t pc)
 	if (!b) {
 		b = jit_discover(avr, pc);
 		g_cache[idx] = b;
+		g_stats.cache_misses++;
 	}
 	return b;
 }
@@ -178,9 +222,11 @@ int avr_jit_run(avr_t *avr, avr_cycle_count_t until)
 		       !avr->interrupt_state) {
 			avr_jit_block_t *b = jit_lookup(avr, avr->pc);
 			if (b && b->run && b->n_words > 0) {
+				g_stats.block_runs++;
 				avr->pc = b->run(avr, b, window_end);
 			} else {
 				/* terminator, empty block, or untranslated */
+				g_stats.fallback_steps++;
 				avr->pc = avr_run_one(avr);
 			}
 		}
@@ -221,6 +267,7 @@ static int interp_translate(avr_t *avr, avr_jit_block_t *blk)
 	(void)avr;
 	blk->run = interp_run;
 	blk->backend = NULL;
+	g_stats.translated_blocks++;
 	return 1;
 }
 
@@ -231,6 +278,53 @@ const avr_jit_backend_t avr_jit_backend_interp = {
 };
 
 /* -------------------------------------------------------- arm backend ---- */
+#if defined(__arm__) || defined(__ARMEL__)
+typedef struct arm_code_buf_t {
+	uint8_t *base;
+	size_t capacity;
+	size_t used;
+} arm_code_buf_t;
+
+static void *jit_exec_alloc(size_t size)
+{
+	long page = sysconf(_SC_PAGESIZE);
+	size_t alloc = size;
+	void *p;
+
+	if (page <= 0)
+		page = 4096;
+	alloc = (alloc + (size_t)page - 1) & ~((size_t)page - 1);
+	p = mmap(NULL, alloc, PROT_READ | PROT_WRITE | PROT_EXEC,
+		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == (void *)-1)
+		return NULL;
+	return p;
+}
+
+static void jit_exec_free(void *p, size_t size)
+{
+	long page = sysconf(_SC_PAGESIZE);
+	size_t alloc = size;
+	if (!p)
+		return;
+	if (page <= 0)
+		page = 4096;
+	alloc = (alloc + (size_t)page - 1) & ~((size_t)page - 1);
+	munmap(p, alloc);
+}
+
+static void jit_clear_cache(void *start, void *end)
+{
+	register long r0 __asm__("r0") = (long)start;
+	register long r1 __asm__("r1") = (long)end;
+	register long r2 __asm__("r2") = 0;
+	__asm__ volatile("swi 0x9f0002"
+			 :
+			 : "r"(r0), "r"(r1), "r"(r2)
+			 : "memory");
+}
+#endif
+
 /*
  * Device-only. translate() should emit ARMv5 into an executable buffer that
  * reproduces the block body's effects (register file in avr->data, flags,
@@ -250,7 +344,14 @@ const avr_jit_backend_t avr_jit_backend_interp = {
  */
 static int arm_translate(avr_t *avr, avr_jit_block_t *blk)
 {
-	(void)avr; (void)blk;
+#if defined(__arm__) || defined(__ARMEL__)
+	(void)g_offsets;
+	(void)jit_exec_alloc;
+	(void)jit_exec_free;
+	(void)jit_clear_cache;
+#endif
+	(void)avr;
+	(void)blk;
 	return 0;	/* not implemented off-target -> interpreter fallback */
 }
 

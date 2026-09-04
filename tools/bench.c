@@ -9,11 +9,14 @@
  * change preserved emulation semantics.  Compare the MHz to see the speedup.
  */
 #include "arduboy_core.h"
+#ifdef ARDUBOY_JIT
+#include "avr_jit.h"
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+#include <sys/time.h>
 
 static unsigned long long fnv1a(const unsigned char *p, unsigned n) {
 	unsigned long long h = 1469598103934665603ULL;
@@ -26,9 +29,9 @@ static unsigned long long fnv1a(const unsigned char *p, unsigned n) {
 }
 
 static double now_sec(void) {
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return (double)tv.tv_sec + (double)tv.tv_usec / 1000000.0;
 }
 
 int main(int argc, char **argv) {
@@ -86,6 +89,17 @@ int main(int argc, char **argv) {
 		       "fbhash=%016llx statehash=%016llx ramhash=%016llx\n",
 		       done, secs, sim_mhz, frames_seen, h, sh, rh);
 	}
+#ifdef ARDUBOY_JIT
+	{
+		avr_jit_stats_t st;
+		avr_jit_get_stats(&st);
+		printf("jit backend=%s cache_words=%u cache_misses=%u "
+		       "translated=%u native=%u block_runs=%u fallback=%u\n",
+		       st.backend_name ? st.backend_name : "none",
+		       st.cache_words, st.cache_misses, st.translated_blocks,
+		       st.native_blocks, st.block_runs, st.fallback_steps);
+	}
+#endif
 
 	zaurus_arduboy_destroy(emu);
 	return 0;

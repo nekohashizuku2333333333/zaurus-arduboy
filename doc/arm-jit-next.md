@@ -169,3 +169,60 @@ The current `interp` backend in `avr_jit.c` is validation-only. It still calls
 
 The real speed path is `avr_jit_backend_arm.translate()`, and it must be
 developed where emitted ARM code can execute: the Zaurus or QEMU-ARM/ARMv5.
+
+## Scaffold update
+
+The first target-side groundwork is now in code:
+
+- `avr_jit_stats_t` plus `avr_jit_get_stats()` expose cache/block/fallback
+  counters.
+- `tools/bench` prints those counters when built with `JIT=1`.
+- `avr_jit.c` now has target-only executable-buffer helpers for ARM:
+  `mmap(PROT_READ|PROT_WRITE|PROT_EXEC)`, page-rounded `munmap`, and the old
+  ARM Linux `cacheflush` SWI wrapper.
+- `avr_jit.c` centralises the `offsetof()` values the ARM emitter will need,
+  so the backend does not have to guess the layout of `avr_t` or
+  `avr_jit_block_t`.
+
+Local x86 validation:
+
+```sh
+make FAST=1
+./tools/bench tests/fixtures/exer2.hex 1000000 266667
+make JIT=1
+./tools/bench tests/fixtures/exer2.hex 1000000 266667
+./tools/bench tests/fixtures/exer3.hex 1000000 266667
+```
+
+Observed JIT scaffold counters on x86:
+
+```text
+exer2: backend=interp cache_words=16384 cache_misses=196 translated=196 native=0 block_runs=158638 fallback=354481
+exer3: backend=interp cache_words=16384 cache_misses=35 translated=35 native=0 block_runs=4101 fallback=781197
+```
+
+`native=0` is expected until `arm_translate()` emits code. The useful signal is
+that block discovery and cache lookup are actually exercised.
+
+Remote SDK validation:
+
+```sh
+JIT=1 sh scripts/build_zaurus.sh
+```
+
+This completed with the old ARM/Qtopia toolchains and produced:
+
+- `dist/zaurusarduboy_jit_scaffold2`
+- `dist/zaurusbench_jit_scaffold2`
+- `dist/zaurusarduboy_jit_scaffold2_0.1_arm.ipk`
+
+The next device command should be:
+
+```sh
+./zaurusbench_jit_scaffold2 tests/fixtures/exer2.hex 1000000 266667
+```
+
+Expected before the real ARM emitter lands: `backend=interp`, `native=0`, and
+the same `fbhash/statehash/ramhash` as the interpreter. Once `arm_translate()`
+starts emitting native code, `native` should become non-zero and `sim_mhz`
+should move upward.

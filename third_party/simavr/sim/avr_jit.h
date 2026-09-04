@@ -62,6 +62,16 @@ typedef struct avr_jit_backend_t {
 	void (*free_block)(avr_jit_block_t *blk);
 } avr_jit_backend_t;
 
+typedef struct avr_jit_stats_t {
+	uint32_t	cache_words;
+	uint32_t	cache_misses;
+	uint32_t	translated_blocks;
+	uint32_t	native_blocks;
+	uint32_t	block_runs;
+	uint32_t	fallback_steps;
+	const char *backend_name;
+} avr_jit_stats_t;
+
 /* Lifecycle. */
 void avr_jit_init(avr_t *avr);
 void avr_jit_deinit(avr_t *avr);
@@ -79,6 +89,7 @@ int avr_jit_run(avr_t *avr, avr_cycle_count_t until);
 
 /* Select the active backend (defaults to interp). */
 void avr_jit_set_backend(const avr_jit_backend_t *backend);
+void avr_jit_get_stats(avr_jit_stats_t *out);
 
 /* Built-in backends. */
 extern const avr_jit_backend_t avr_jit_backend_interp;
