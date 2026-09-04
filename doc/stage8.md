@@ -69,6 +69,31 @@ Bit-identical across the differential harness: `exer2` ram `6f7b3f6ade14cf8d`,
 `1c9e7c9f2a2f286f`. Default (non-fast) build untouched, still bit-exact to
 stock.
 
+## ARM build notes
+
+Built on the remote SDK host from `/tmp/arduboy-qtopia-qvfb/app` with:
+
+```sh
+sh scripts/build_zaurus.sh
+FAST_DISPATCH=1 sh scripts/build_zaurus.sh
+```
+
+The checked-in packages are:
+
+- `dist/zaurusarduboy_0.1_arm.ipk` / `dist/zaurusarduboy` — default build.
+- `dist/zaurusarduboy_default_0.1_arm.ipk` / `dist/zaurusarduboy_default` —
+  explicit default build copy.
+- `dist/zaurusarduboy_fast_0.1_arm.ipk` / `dist/zaurusarduboy_fast` —
+  `ARDUBOY_FAST_DISPATCH` build for device A/B testing.
+- `dist/zaurusbench_default` and `dist/zaurusbench_fast` — headless ARM
+  throughput/correctness probes.
+
+Compatibility fix carried forward: `tools/bench.c` uses `gettimeofday()` rather
+than `clock_gettime(CLOCK_MONOTONIC)` so the old glibc/toolchain combination can
+build it, and `scripts/build_zaurus.sh` links the ARM benchmark with
+`-Wl,--no-warn-mismatch` for the mixed old-FPA/soft-FP object tags seen in this
+SDK.
+
 ## Where this leaves us (honest)
 
 Stages 4–8 have squeezed the interpreter with safe, verified changes. The

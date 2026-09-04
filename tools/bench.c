@@ -28,7 +28,7 @@ static unsigned long long fnv1a(const unsigned char *p, unsigned n) {
 static double now_sec(void) {
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
-	return (double)tv.tv_sec + (double)tv.tv_usec / 1e6;
+	return (double)tv.tv_sec + (double)tv.tv_usec / 1000000.0;
 }
 
 int main(int argc, char **argv) {
