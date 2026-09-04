@@ -356,6 +356,21 @@ inline void _avr_sp_set(avr_t * avr, uint16_t sp)
  */
 static inline void _avr_set_ram(avr_t * avr, uint16_t addr, uint8_t v)
 {
+#ifdef ARDUBOY_FAST_DISPATCH
+	/*
+	 * Fast path for pure SRAM (above the I/O region, within RAM): no I/O
+	 * write callback, no per-bit IRQ, and with no gdb and no SRAM
+	 * tracepoints (both always true on the device) avr_core_watch_write's
+	 * wrap-check, watchpoint check and the non-inlined _call_sram_irqs()
+	 * function call are all dead weight.  Stack ops (push/pop/call/ret) and
+	 * arrays hammer this path.
+	 */
+	if (addr > avr->ioend && addr <= avr->ramend &&
+	    !avr->gdb && avr->sram_tracepoint_count == 0) {
+		avr->data[addr] = v;
+		return;
+	}
+#endif
 	if (addr <= avr->ioend)
 		_avr_set_r(avr, addr, v);
 	else
@@ -367,6 +382,19 @@ static inline void _avr_set_ram(avr_t * avr, uint16_t addr, uint8_t v)
  */
 static inline uint8_t _avr_get_ram(avr_t * avr, uint16_t addr)
 {
+#ifdef ARDUBOY_FAST_DISPATCH
+	/*
+	 * Fast path for the register file (r0..r31, never SREG/I-O) and pure
+	 * SRAM: no reconstruction, no I/O read callback, and no gdb watchpoint
+	 * on the device -- return the byte directly, skipping
+	 * avr_core_watch_read's wrap-check + watchpoint branch on every load,
+	 * LDD/LDS, and stack pop.
+	 */
+	if ((addr < 32 || (addr > avr->ioend && addr <= avr->ramend)) &&
+	    !avr->gdb) {
+		return avr->data[addr];
+	}
+#endif
 	if (addr == R_SREG) {
 		/*
 		 * SREG is special it's reconstructed when read
