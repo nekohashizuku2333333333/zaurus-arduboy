@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+#include <sys/time.h>
 
 static unsigned long long fnv1a(const unsigned char *p, unsigned n) {
 	unsigned long long h = 1469598103934665603ULL;
@@ -26,9 +26,9 @@ static unsigned long long fnv1a(const unsigned char *p, unsigned n) {
 }
 
 static double now_sec(void) {
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return (double)tv.tv_sec + (double)tv.tv_usec / 1e6;
 }
 
 int main(int argc, char **argv) {

@@ -68,7 +68,8 @@ $AR rcs libzaurusarduboy.a $OBJS
 # and read the sim_mhz field (emulated AVR MHz achieved) and fbhash.
 if [ "${BUILD_BENCH:-1}" = "1" ]; then
 	echo "CC tools/bench.c -> zaurusbench"
-	$CORE_CC $CORE_CFLAGS $INCLUDES -o zaurusbench tools/bench.c libzaurusarduboy.a -lm || \
+	$CORE_CC $CORE_CFLAGS $INCLUDES -o zaurusbench tools/bench.c \
+		libzaurusarduboy.a -Wl,--no-warn-mismatch -lm || \
 		echo "WARN: zaurusbench build failed (non-fatal)"
 fi
 
