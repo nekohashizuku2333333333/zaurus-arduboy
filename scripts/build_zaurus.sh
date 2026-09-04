@@ -54,6 +54,15 @@ done
 echo "AR libzaurusarduboy.a"
 $AR rcs libzaurusarduboy.a $OBJS
 
+# Optional headless throughput/correctness benchmark for the real device.
+# Run on the C750 as:  ./zaurusbench game.hex <total_cycles> <slice_cycles>
+# and read the sim_mhz field (emulated AVR MHz achieved) and fbhash.
+if [ "${BUILD_BENCH:-1}" = "1" ]; then
+	echo "CC tools/bench.c -> zaurusbench"
+	$CORE_CC $CORE_CFLAGS $INCLUDES -o zaurusbench tools/bench.c libzaurusarduboy.a -lm || \
+		echo "WARN: zaurusbench build failed (non-fatal)"
+fi
+
 echo "CXX src/zaurus_qt_main.cpp"
 $CXX -c $CXXFLAGS $INCLUDES -o src/zaurus_qt_main.o src/zaurus_qt_main.cpp
 

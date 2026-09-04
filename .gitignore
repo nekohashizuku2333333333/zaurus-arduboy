@@ -2,6 +2,11 @@
 *.a
 tools/dump_frame
 /zaurusarduboy
+/zaurusbench
 /tmp/
 .repo.git/
 repo.git/
+tools/bench
+gmon.out
+.gitreal
+/frame.pbm

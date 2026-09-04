@@ -6,8 +6,11 @@
 #include <string.h>
 
 #include "sim_avr.h"
+#include "sim_core.h"
 #include "sim_io.h"
 #include "sim_irq.h"
+#include "sim_cycle_timers.h"
+#include "sim_interrupts.h"
 #include "avr_eeprom.h"
 #include "avr_ioport.h"
 #include "ssd1306_virt.h"
@@ -144,23 +147,102 @@ void zaurus_arduboy_set_buttons(zaurus_arduboy_t *emu, unsigned mask)
 	sync_buttons(emu);
 }
 
+/*
+ * Batched execution kernel.
+ *
+ * Stock simavr runs one instruction per avr_run() call and walks the cycle
+ * timer pool after *every* instruction (avr_callback_run_raw).  On an
+ * in-order XScale that per-instruction bookkeeping dominates.  Here we run
+ * avr_run_one() in a tight inner loop and only touch the timer pool at the
+ * next timer deadline, which is where a timer can actually fire anyway.
+ *
+ * Semantics preserved:
+ *   - Timers still fire exactly at their scheduled cycle (deadline is the
+ *     window boundary), so Timer/SPI events stay cycle-accurate.
+ *   - Interrupts are serviced the moment interrupt_state is raised: the
+ *     inner loop exits on it, so ISR latency is unchanged versus stock.
+ *   - Sleep fast-forwards to the next timer instead of usleeping; the Qt
+ *     frontend already paces wall-clock time, so this only skips idle
+ *     cycles faster (and never busy-usleeps inside a run slice).
+ */
 int zaurus_arduboy_run_cycles(zaurus_arduboy_t *emu, unsigned cycles)
 {
+	avr_t *avr;
 	avr_cycle_count_t until;
+
 	if (!emu || !emu->avr)
 		return -1;
-	until = emu->avr->cycle + cycles;
-	while (emu->avr->cycle < until) {
-		int state = avr_run(emu->avr);
-		if (state == cpu_Done || state == cpu_Crashed)
-			return state;
+	avr = emu->avr;
+	until = avr->cycle + cycles;
+
+	while (avr->cycle < until) {
+		avr_cycle_count_t sleep, next;
+
+		if (avr->state != cpu_Running && avr->state != cpu_Sleeping)
+			break;
+
+		/* Handle any due timers and learn the cycles to the next one. */
+		sleep = avr_cycle_timer_process(avr);
+
+		if (avr->state == cpu_Sleeping) {
+			/*
+			 * Nothing to execute until the next event: jump the
+			 * clock forward to it instead of interpreting NOPs.
+			 */
+			if (!avr->sreg[S_I]) {
+				avr->state = cpu_Done;
+				break;
+			}
+			avr->cycle += 1 + sleep;
+			if (avr->interrupt_state)
+				avr_service_interrupts(avr);
+			continue;
+		}
+
+		/*
+		 * Hot loop: run instructions with no per-instruction
+		 * timer-pool walk and no indirect avr->run call.  We only
+		 * peek the front (soonest) timer's deadline, which stays
+		 * correct even when an instruction registers a *new* timer
+		 * (e.g. every hardware-SPI byte): the new timer becomes the
+		 * sorted-list head, so the peek clamps the window to it and
+		 * it still fires exactly on its scheduled cycle.
+		 *
+		 * Exit early on interrupt_state so ISR latency and any state
+		 * change (SLEEP/crash) are handled immediately, exactly as
+		 * stock simavr would.
+		 */
+		next = avr->cycle_timers.timer ? avr->cycle_timers.timer->when
+					       : until;
+		while (avr->cycle < next &&
+		       avr->cycle < until &&
+		       avr->state == cpu_Running &&
+		       !avr->interrupt_state) {
+			avr->pc = avr_run_one(avr);
+			if (avr->cycle_timers.timer)
+				next = avr->cycle_timers.timer->when;
+		}
+
+		if (avr->interrupt_state)
+			avr_service_interrupts(avr);
 	}
+
+	/*
+	 * Flush any timer that came due exactly on the slice boundary, so a
+	 * run slice leaves the same pending-timer state stock simavr would
+	 * (which processes timers after every instruction).  Keeps behaviour
+	 * across many small frontend slices close to the reference.
+	 */
+	avr_cycle_timer_process(avr);
+	if (avr->interrupt_state)
+		avr_service_interrupts(avr);
+
 	if (ssd1306_get_flag(&emu->oled, SSD1306_FLAG_DIRTY)) {
 		copy_frame(emu);
 		ssd1306_set_flag(&emu->oled, SSD1306_FLAG_DIRTY, 0);
 		emu->frame_dirty = 1;
 	}
-	return emu->avr->state;
+	return avr->state;
 }
 
 const unsigned char *zaurus_arduboy_framebuffer(const zaurus_arduboy_t *emu)
