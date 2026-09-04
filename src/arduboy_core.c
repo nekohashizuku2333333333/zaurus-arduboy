@@ -107,6 +107,15 @@ zaurus_arduboy_t *zaurus_arduboy_create(void)
 	}
 	emu->avr->frequency = AVR_FREQUENCY;
 	avr_init(emu->avr);
+#ifdef ARDUBOY_FAST_DISPATCH
+	/*
+	 * Unlock simavr's built-in intra-call instruction batching (default
+	 * limit is 1 = one instruction per avr_run_one call).  Each batch is
+	 * still bounded to the next timer deadline (sim_core.c guard) and to
+	 * the requested slice (run_cycle_count clamp in run_cycles).
+	 */
+	emu->avr->run_cycle_limit = 0x40000000u;
+#endif
 
 	ssd1306_init(emu->avr, &emu->oled, ZAURUS_ARDUBOY_WIDTH,
 		     ZAURUS_ARDUBOY_HEIGHT);
@@ -175,6 +184,47 @@ int zaurus_arduboy_run_cycles(zaurus_arduboy_t *emu, unsigned cycles)
 	avr = emu->avr;
 	until = avr->cycle + cycles;
 
+#ifdef ARDUBOY_FAST_DISPATCH
+	/*
+	 * Fast dispatch: let simavr's own intra-call batching (the
+	 * `goto run_one_again` loop, guarded here by run_cycle_limit) run a
+	 * whole timer window inside a single avr_run_one() call, so there is
+	 * no per-instruction function-call overhead.  The batch is bounded to
+	 * the next timer deadline by the ARDUBOY_FAST_DISPATCH guard added in
+	 * sim_core.c, and to this slice by clamping run_cycle_count below.
+	 * avr_run_one() also exits as soon as interrupt_state is raised, so
+	 * interrupts are serviced at the same instruction boundary as stock.
+	 */
+	while (avr->cycle < until) {
+		avr_cycle_count_t sleep, remaining;
+
+		if (avr->state != cpu_Running && avr->state != cpu_Sleeping)
+			break;
+
+		if (avr->state == cpu_Running) {
+			remaining = until - avr->cycle;
+			if (avr->run_cycle_count > remaining)
+				avr->run_cycle_count = remaining;
+			if (avr->run_cycle_count < 1)
+				avr->run_cycle_count = 1;
+			avr->pc = avr_run_one(avr);
+		}
+
+		/* Fire due timers and set run_cycle_count for the next batch. */
+		sleep = avr_cycle_timer_process(avr);
+
+		if (avr->state == cpu_Sleeping) {
+			if (!avr->sreg[S_I]) {
+				avr->state = cpu_Done;
+				break;
+			}
+			avr->cycle += 1 + sleep;
+		}
+
+		if (avr->interrupt_state)
+			avr_service_interrupts(avr);
+	}
+#else
 	while (avr->cycle < until) {
 		avr_cycle_count_t sleep, next;
 
@@ -226,6 +276,7 @@ int zaurus_arduboy_run_cycles(zaurus_arduboy_t *emu, unsigned cycles)
 		if (avr->interrupt_state)
 			avr_service_interrupts(avr);
 	}
+#endif
 
 	/*
 	 * Flush any timer that came due exactly on the slice boundary, so a
@@ -259,6 +310,40 @@ void zaurus_arduboy_clear_frame_dirty(zaurus_arduboy_t *emu)
 {
 	if (emu)
 		emu->frame_dirty = 0;
+}
+
+unsigned long long zaurus_arduboy_state_fingerprint(const zaurus_arduboy_t *emu)
+{
+	unsigned long long h = 1469598103934665603ULL;
+	const avr_t *avr;
+	unsigned i, n;
+
+	if (!emu || !emu->avr)
+		return 0;
+	avr = emu->avr;
+	n = (unsigned)avr->ramend + 1u;
+	for (i = 0; i < n; i++) {
+		h ^= avr->data[i];
+		h *= 1099511628211ULL;
+	}
+	/* Fold in PC and cycle count so timing/control-flow diffs show up. */
+	{
+		unsigned long long tail = ((unsigned long long)avr->pc << 40)
+					^ (unsigned long long)avr->cycle;
+		h ^= tail;
+		h *= 1099511628211ULL;
+	}
+	return h;
+}
+
+unsigned long long zaurus_arduboy_ram_fingerprint(const zaurus_arduboy_t *emu)
+{
+	unsigned long long h = 1469598103934665603ULL;
+	const avr_t *avr; unsigned i, n;
+	if (!emu || !emu->avr) return 0;
+	avr = emu->avr; n = (unsigned)avr->ramend + 1u;
+	for (i = 0; i < n; i++) { h ^= avr->data[i]; h *= 1099511628211ULL; }
+	return h;
 }
 
 int zaurus_arduboy_load_eeprom(zaurus_arduboy_t *emu, const char *path)

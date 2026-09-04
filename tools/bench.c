@@ -79,9 +79,12 @@ int main(int argc, char **argv) {
 	{
 		const unsigned char *fb = zaurus_arduboy_framebuffer(emu);
 		unsigned long long h = fnv1a(fb, ZAURUS_ARDUBOY_FRAME_BYTES);
+		unsigned long long sh = zaurus_arduboy_state_fingerprint(emu);
+		unsigned long long rh = zaurus_arduboy_ram_fingerprint(emu);
 		double sim_mhz = (secs > 0) ? (done / secs) / 1e6 : 0.0;
-		printf("cycles=%llu wall=%.3fs sim_mhz=%.2f frames=%llu fbhash=%016llx\n",
-		       done, secs, sim_mhz, frames_seen, h);
+		printf("cycles=%llu wall=%.3fs sim_mhz=%.2f frames=%llu "
+		       "fbhash=%016llx statehash=%016llx ramhash=%016llx\n",
+		       done, secs, sim_mhz, frames_seen, h, sh, rh);
 	}
 
 	zaurus_arduboy_destroy(emu);

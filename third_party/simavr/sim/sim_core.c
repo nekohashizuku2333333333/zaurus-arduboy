@@ -1645,7 +1645,23 @@ run_one_again:
 
 	if ((avr->state == cpu_Running) &&
 		(avr->run_cycle_count > cycle) &&
-		(avr->interrupt_state == 0))
+		(avr->interrupt_state == 0)
+#ifdef ARDUBOY_FAST_DISPATCH
+		/*
+		 * Zaurus port: keep the built-in intra-call batching from
+		 * overrunning a pending cycle timer.  A timer may have been
+		 * (re)registered by the instruction just executed (every
+		 * hardware-SPI byte does this), which makes it the sorted-list
+		 * head; stopping the internal loop the moment avr->cycle
+		 * reaches that deadline means the timer still fires on its
+		 * exact cycle -- the same point stock simavr would process it
+		 * after the boundary-crossing instruction.  This is what makes
+		 * fast dispatch bit-identical to the per-instruction path.
+		 */
+		&& (avr->cycle_timers.timer == NULL ||
+		    avr->cycle < avr->cycle_timers.timer->when)
+#endif
+		)
 	{
 		avr->run_cycle_count -= cycle;
 		avr->pc = new_pc;

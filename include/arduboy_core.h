@@ -34,6 +34,18 @@ void zaurus_arduboy_clear_frame_dirty(zaurus_arduboy_t *emu);
 int zaurus_arduboy_load_eeprom(zaurus_arduboy_t *emu, const char *path);
 int zaurus_arduboy_save_eeprom(zaurus_arduboy_t *emu, const char *path);
 
+/*
+ * Full CPU/RAM state fingerprint for differential testing: FNV-1a over the
+ * whole data space (registers + I/O regs + SRAM) mixed with PC and cycle
+ * count.  Two builds that produce the same fingerprint after the same run
+ * executed identical instruction streams with identical timing.
+ */
+unsigned long long zaurus_arduboy_state_fingerprint(const zaurus_arduboy_t *emu);
+
+/* Like state_fingerprint but over data space only (no PC/cycle): stable once
+ * a deterministic computation has quiesced, regardless of slice boundaries. */
+unsigned long long zaurus_arduboy_ram_fingerprint(const zaurus_arduboy_t *emu);
+
 #ifdef __cplusplus
 }
 #endif

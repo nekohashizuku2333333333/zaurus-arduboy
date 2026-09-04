@@ -6,6 +6,13 @@ SIMAVR := third_party/simavr
 SIM_INC := -I$(SIMAVR) -I$(SIMAVR)/sim -I$(SIMAVR)/examples/parts
 CPPFLAGS += -Iinclude -Isrc $(SIM_INC)
 
+# Optional: FAST=1 enables the fast-dispatch execution kernel (simavr's
+# built-in intra-call instruction batching, made timer-safe).  Default off =
+# the bit-exact batched kernel.  See doc/stage5.md.
+ifeq ($(FAST),1)
+CPPFLAGS += -DARDUBOY_FAST_DISPATCH
+endif
+
 SIM_SRCS := \
 	$(SIMAVR)/cores/sim_mega32u4.c \
 	$(SIMAVR)/sim/avr_acomp.c \

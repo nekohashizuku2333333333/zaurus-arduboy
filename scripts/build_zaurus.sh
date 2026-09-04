@@ -10,6 +10,15 @@ set -e
 SIMAVR=third_party/simavr
 INCLUDES="-Iinclude -Isrc -I$SIMAVR -I$SIMAVR/sim -I$SIMAVR/examples/parts -I$QPESDK/include -I$QTDIR/include"
 QT_DEFS="-DQT_QWS_SL5XXX -DQT_QWS_CUSTOM -DQWS -DQT_NO_PROPERTIES -DQT_NO_DRAGANDDROP -DNO_DEBUG"
+
+# Fast dispatch: FAST_DISPATCH=1 enables simavr's built-in intra-call
+# instruction batching (made timer-safe for this port).  Default off = the
+# bit-exact batched kernel.  Measure both on the device with ./zaurusbench
+# and keep whichever is faster; see doc/stage5.md.
+if [ "${FAST_DISPATCH:-0}" = "1" ]; then
+	QT_DEFS="$QT_DEFS -DARDUBOY_FAST_DISPATCH"
+	echo "build: ARDUBOY_FAST_DISPATCH enabled"
+fi
 CORE_CFLAGS="-pipe -O3 -fomit-frame-pointer -fno-strict-aliasing -Wall -W -std=gnu99 $QT_DEFS -mcpu=xscale -mtune=xscale -mhard-float"
 CXXFLAGS="-pipe -O2 -fomit-frame-pointer -Wall -W $QT_DEFS -fno-exceptions -fno-rtti"
 
