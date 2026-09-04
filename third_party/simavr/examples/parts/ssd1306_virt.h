@@ -159,6 +159,7 @@ typedef struct ssd1306_t
 	uint8_t di_pin;
 	uint8_t spi_data;
 	uint8_t reg_write_sz;
+	uint16_t frame_bytes;
 	enum ssd1306_addressing_mode_t addr_mode;
 
 	uint8_t twi_selected;

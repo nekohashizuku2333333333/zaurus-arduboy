@@ -37,6 +37,8 @@ static void
 ssd1306_write_data (ssd1306_t *part)
 {
 	part->vram[part->cursor.page][part->cursor.column] = part->spi_data;
+	if (part->frame_bytes < SSD1306_VIRT_COLUMNS * SSD1306_VIRT_PAGES)
+		part->frame_bytes++;
 	switch (part->addr_mode)
 	{
 		case SSD1306_ADDR_MODE_VERT:
@@ -67,7 +69,10 @@ ssd1306_write_data (ssd1306_t *part)
 			break;
 	}
 
-	ssd1306_set_flag (part, SSD1306_FLAG_DIRTY, 1);
+	if (part->frame_bytes >= SSD1306_VIRT_COLUMNS * SSD1306_VIRT_PAGES) {
+		part->frame_bytes = 0;
+		ssd1306_set_flag (part, SSD1306_FLAG_DIRTY, 1);
+	}
 }
 
 /*
@@ -425,6 +430,7 @@ ssd1306_reset_hook (struct avr_irq_t * irq, uint32_t value, void * param)
 		memset (part->vram, 0, sizeof(part->vram));
 		part->cursor.column = 0;
 		part->cursor.page = 0;
+		part->frame_bytes = 0;
 		part->flags = 0;
 		part->command_register = 0x00;
 		part->contrast_register = 0x7F;

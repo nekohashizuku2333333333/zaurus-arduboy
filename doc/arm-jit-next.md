@@ -413,3 +413,47 @@ afe9cee8f92a95154dfb56fd667a46e417c7e6d2df37e44563e33df0580735b3  dist/zaurusben
 f9b93861db5f88ff227cb3f9075c1f87ee95b38b8c4867d20212c3c5083407a8  dist/zaurusjit_scan_armjit_logic5
 bcf4fdd37ae2e71c772f6739d3ab6adc0524175af1aba118eb9f97971c1fed53  dist/zaurusarduboy_armjit_logic5_0.1_arm.ipk
 ```
+
+## Full-frame OLED dirty gate and JIT HUD
+
+The first real-game photos showed a partial/fragmented startup image before
+the menu settled. The root cause is that `ssd1306_virt.c` marked the display
+dirty after every single SPI data byte, so the Qt frontend could paint the OLED
+while a 1024-byte Arduboy frame was still being transmitted.
+
+The SSD1306 model now accumulates data bytes and only raises
+`SSD1306_FLAG_DIRTY` after 1024 data bytes. Reset clears the accumulator. This
+keeps command-driven display state changes intact, but avoids painting
+half-filled VRAM during startup and cuts needless paint requests.
+
+The Qt HUD/stat file also includes JIT counters through the C wrapper
+`zaurus_arduboy_jit_status()`, avoiding direct inclusion of simavr headers from
+old Qt g++:
+
+```text
+sim=...MHz emu=...% paint=...% fps=... jit=arm native=... fallback=...
+```
+
+Local validation:
+
+```text
+exer3 @ 2133336 cycles: frames=1 fbhash=5fb232656e776ddb
+```
+
+Remote ARM OABI/Qtopia build passed and produced:
+
+```text
+dist/zaurusarduboy_armjit_logic6
+dist/zaurusbench_armjit_logic6
+dist/zaurusjit_scan_armjit_logic6
+dist/zaurusarduboy_armjit_logic6_0.1_arm.ipk
+```
+
+SHA-256:
+
+```text
+0e674f31e1e0037355a960f46689056acc1943ee063a61c3687239dea492f053  dist/zaurusarduboy_armjit_logic6
+a9c1e87080f1bab42c6060eb2acf0cdac268ed172082cd472471826047b94b7f  dist/zaurusbench_armjit_logic6
+f9b93861db5f88ff227cb3f9075c1f87ee95b38b8c4867d20212c3c5083407a8  dist/zaurusjit_scan_armjit_logic6
+4485322fc666790348a06f28ae79bee62c5616c25ad429f1ae128dffe744e73c  dist/zaurusarduboy_armjit_logic6_0.1_arm.ipk
+```

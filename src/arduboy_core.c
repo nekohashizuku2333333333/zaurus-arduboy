@@ -358,6 +358,25 @@ unsigned long long zaurus_arduboy_ram_fingerprint(const zaurus_arduboy_t *emu)
 	return h;
 }
 
+int zaurus_arduboy_jit_status(char *buf, unsigned size)
+{
+	if (!buf || !size)
+		return 0;
+#ifdef ARDUBOY_JIT
+	{
+		avr_jit_stats_t jit;
+		avr_jit_get_stats(&jit);
+		return snprintf(buf, size, "jit=%s native=%lu fallback=%lu",
+				jit.backend_name ? jit.backend_name : "none",
+				(unsigned long)jit.native_blocks,
+				(unsigned long)jit.fallback_steps);
+	}
+#else
+	buf[0] = 0;
+	return 0;
+#endif
+}
+
 int zaurus_arduboy_load_eeprom(zaurus_arduboy_t *emu, const char *path)
 {
 	FILE *fp;

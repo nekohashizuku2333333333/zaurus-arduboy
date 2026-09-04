@@ -464,6 +464,15 @@ private:
 			unsigned long emuPct = (unsigned long)((statEmuUs * 100ULL) / win);
 			unsigned long paintPct = (unsigned long)((statPaintUs * 100ULL) / win);
 			unsigned long fpm = statFrames;   /* frames this ~1s window */
+#ifdef ARDUBOY_JIT
+			char jitStatus[96];
+			zaurus_arduboy_jit_status(jitStatus, sizeof(jitStatus));
+			snprintf(statLine, sizeof(statLine),
+				 "sim=%lu.%02luMHz emu=%lu%% paint=%lu%% fps=%lu %s",
+				 simk, (unsigned long)((statCycles * 100ULL /
+					(statEmuUs ? statEmuUs : 1)) % 100ULL),
+				 emuPct, paintPct, fpm, jitStatus);
+#else
 			snprintf(statLine, sizeof(statLine),
 				 "sim=%lu.%02luMHz emu=%lu%% paintdirect=%lu%% fps=%lu (emu %lums/paint %lums per s)",
 				 simk, (unsigned long)((statCycles * 100ULL /
@@ -471,6 +480,7 @@ private:
 				 emuPct, paintPct, fpm,
 				 (unsigned long)(statEmuUs / 1000ULL),
 				 (unsigned long)(statPaintUs / 1000ULL));
+#endif
 			FILE *fp = fopen(statsPath(), "w");
 			if (fp) { fprintf(fp, "%s\n", statLine); fclose(fp); }
 		}

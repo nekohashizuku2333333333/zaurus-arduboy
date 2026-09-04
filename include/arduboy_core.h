@@ -46,6 +46,9 @@ unsigned long long zaurus_arduboy_state_fingerprint(const zaurus_arduboy_t *emu)
  * a deterministic computation has quiesced, regardless of slice boundaries. */
 unsigned long long zaurus_arduboy_ram_fingerprint(const zaurus_arduboy_t *emu);
 
+/* Writes a compact JIT status suffix when built with ARDUBOY_JIT. */
+int zaurus_arduboy_jit_status(char *buf, unsigned size);
+
 #ifdef __cplusplus
 }
 #endif
