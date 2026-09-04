@@ -462,11 +462,20 @@ avr_timer_configure(
 	uint8_t virt_ext_clock = use_ext_clock && (p->ext_clock_flags & AVR_TIMER_EXTCLK_FLAG_VIRT);
 
 	if (!use_ext_clock) {
-		if (prescaler != 0)
+		/*
+		 * resulting_clock / tov_cycles_exact are only consumed by the
+		 * p->trace logging below.  Computing them here costs an FPA
+		 * float divide on every timer reconfiguration, which on a
+		 * no-FPU XScale traps into the kernel -- invisible on x86 but
+		 * expensive on the Zaurus for sound-heavy games that retune the
+		 * timer often.  Compute them only when tracing is actually on.
+		 */
+		if (p->trace && prescaler != 0)
 			resulting_clock = (float)avr->frequency / prescaler;
 		p->tov_cycles = prescaler * (top+1);
 		p->tov_cycles_fract = 0.0f;
-		tov_cycles_exact = p->tov_cycles;
+		if (p->trace)
+			tov_cycles_exact = p->tov_cycles;
 	} else {
 		if (!virt_ext_clock) {
 			p->tov_cycles = 0;

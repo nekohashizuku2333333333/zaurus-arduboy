@@ -138,10 +138,17 @@ avr-objcopy -O ihex -R .eeprom /tmp/x.elf tests/fixtures/exer2.hex
 On-device: build `zaurusbench` (done by build_zaurus.sh) and compare
 `sim_mhz` between the default and `FAST_DISPATCH=1` builds on real games.
 
-## 5. NEXT STEP — the remaining lever
+## 5. NEXT STEP — MEASURE FIRST, then the remaining lever
 
-Profiling (host `gprof`) puts **`avr_run_one` at ~70% self time**; it is now
-the only thing left worth attacking. The designed next optimization is a
+**Before optimizing anything, read the on-device HUD** (Stage 6). Run a real
+game, open the **Keys** page or `cat $HOME/arduboy-stats.txt`, and read:
+`sim=…MHz emu=…% paintdirect=…% fps=…`. This says whether the wall is the
+CPU (`emu` high) or the Qt blit (`paint` high) — see `doc/stage6.md` for how
+to act on each case. Do not assume it is the interpreter; on the C750's
+rotated screen the paint path may dominate. Optimize what the HUD points at.
+
+If the HUD shows it is CPU-bound: profiling (host `gprof`) puts
+**`avr_run_one` at ~70% self time**; that is the thing to attack. The designed next optimization is a
 **predecode / direct-threaded interpreter** (Tier 2/3 in
 `doc/arduboy_accel_research.md`):
 

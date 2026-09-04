@@ -92,8 +92,11 @@ public:
 		  lastKey(0), lastAscii(0), directDepth(0), directOrient(-1),
 		  lastTickUsec(0), nextPaintUsec(0), cycleRemainder(0),
 		  framePending(0),
+		  statEmuUs(0), statPaintUs(0), statCycles(0), statFrames(0),
+		  statWindowStart(0),
 		  displayImage(DRAW_W, DRAW_H, 16), displayPixmap(DRAW_W, DRAW_H)
 	{
+		statLine[0] = 0;
 		setFixedSize(SCREEN_W, SCREEN_H);
 		setFocusPolicy(QWidget::StrongFocus);
 		setFont(QFont("song", 10));
@@ -159,8 +162,13 @@ protected:
 				drawToolbar(p);
 			}
 			clearAroundFrame(p, dirty, frameArea);
-			if (dirty.intersects(frameArea))
+			if (dirty.intersects(frameArea)) {
+				unsigned long pa = nowUsec();
 				drawFrame(p);
+				/* Time the Qt fallback blit (used on rotated QWS
+				 * screens where the direct path is unavailable). */
+				statPaintUs += (unsigned long long)elapsedUsec(pa, nowUsec());
+			}
 		} else {
 			p.fillRect(dirty, QColor(0, 0, 0));
 			if (dirty.intersects(toolbarArea))
@@ -337,6 +345,15 @@ private:
 	unsigned long cycleRemainder;
 	int framePending;
 
+	/* Performance instrumentation (see drawKeyMenu + $HOME/arduboy-stats.txt).
+	 * Separates emulation cost from paint cost on the real device. */
+	unsigned long long statEmuUs;
+	unsigned long long statPaintUs;
+	unsigned long long statCycles;
+	unsigned statFrames;
+	unsigned long statWindowStart;
+	char statLine[160];
+
 	void tick()
 	{
 		unsigned long now;
@@ -362,8 +379,12 @@ private:
 			(unsigned long long)cycleRemainder;
 		cycles = (unsigned)(total / 1000000ULL);
 		cycleRemainder = (unsigned long)(total % 1000000ULL);
-		if (cycles)
+		if (cycles) {
+			unsigned long a = nowUsec();
 			zaurus_arduboy_run_cycles(emu, cycles);
+			statEmuUs += (unsigned long long)elapsedUsec(a, nowUsec());
+			statCycles += (unsigned long long)cycles;
+		}
 		if (zaurus_arduboy_frame_dirty(emu)) {
 			zaurus_arduboy_clear_frame_dirty(emu);
 			if (rebuildDisplayImage())
@@ -371,11 +392,63 @@ private:
 		}
 		if (framePending && elapsedUsec(nextPaintUsec, now) < 0x80000000UL &&
 		    now >= nextPaintUsec) {
+			unsigned long pa;
 			framePending = 0;
 			nextPaintUsec = now + PAINT_INTERVAL_US;
+			pa = nowUsec();
 			if (!paintFrameDirect())
 				update(DRAW_X, DRAW_Y, DRAW_W, DRAW_H);
+			else
+				statPaintUs += (unsigned long long)elapsedUsec(pa, nowUsec());
+			statFrames++;
 		}
+		updateStats(now);
+	}
+
+	/*
+	 * Roll up emulation/paint timing once per second into statLine (shown on
+	 * the Keys page) and mirror it to $HOME/arduboy-stats.txt so it can be
+	 * read off-device.  sim_mhz = emulated AVR cycles per microsecond of
+	 * emulation time; that is the pure core speed, independent of paint.
+	 */
+	void updateStats(unsigned long now)
+	{
+		unsigned long win;
+		if (statWindowStart == 0) {
+			statWindowStart = now;
+			return;
+		}
+		win = elapsedUsec(statWindowStart, now);
+		if (win < 1000000UL)
+			return;
+		{
+			unsigned long simk = statEmuUs ?
+				(unsigned long)((statCycles) / (statEmuUs ? statEmuUs : 1)) : 0;
+			unsigned long emuPct = (unsigned long)((statEmuUs * 100ULL) / win);
+			unsigned long paintPct = (unsigned long)((statPaintUs * 100ULL) / win);
+			unsigned long fpm = statFrames;   /* frames this ~1s window */
+			snprintf(statLine, sizeof(statLine),
+				 "sim=%lu.%02luMHz emu=%lu%% paintdirect=%lu%% fps=%lu (emu %lums/paint %lums per s)",
+				 simk, (unsigned long)((statCycles * 100ULL /
+					(statEmuUs ? statEmuUs : 1)) % 100ULL),
+				 emuPct, paintPct, fpm,
+				 (unsigned long)(statEmuUs / 1000ULL),
+				 (unsigned long)(statPaintUs / 1000ULL));
+			FILE *fp = fopen(statsPath(), "w");
+			if (fp) { fprintf(fp, "%s\n", statLine); fclose(fp); }
+		}
+		statEmuUs = statPaintUs = statCycles = 0;
+		statFrames = 0;
+		statWindowStart = now;
+	}
+
+	const char *statsPath()
+	{
+		static char path[512];
+		const char *home = getenv("HOME");
+		snprintf(path, sizeof(path), "%s/arduboy-stats.txt",
+			 home ? home : "/tmp");
+		return path;
 	}
 
 	unsigned long nowUsec()
@@ -818,6 +891,12 @@ private:
 			p.setPen(QColor(160, 190, 220));
 			p.drawText(410, TOOLBAR_H + 2, SCREEN_W - 422, 18,
 				   AlignVCenter | AlignLeft, keyInfo);
+		}
+		/* Live performance stats (also written to $HOME/arduboy-stats.txt). */
+		if (statLine[0]) {
+			p.setPen(QColor(140, 220, 150));
+			p.drawText(12, SCREEN_H - 22, SCREEN_W - 24, 18,
+				   AlignVCenter | AlignLeft, statLine);
 		}
 		for (i = 0; i < BUTTON_COUNT; i++) {
 			col = i & 1;
