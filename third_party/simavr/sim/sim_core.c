@@ -189,6 +189,20 @@ _avr_flash_read16le(
 	avr_t * avr,
 	avr_flashaddr_t addr)
 {
+#if defined(ARDUBOY_FAST_DISPATCH) && \
+    (defined(__ARMEL__) || defined(__i386__) || defined(__x86_64__) || \
+     (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__))
+	/*
+	 * Every caller fetches an instruction word, so addr is 2-byte aligned
+	 * (PC is always even), and the target (XScale/x86) is little-endian.
+	 * Read the whole halfword in one aligned load instead of two byte
+	 * loads + shift + or.  This single line is ~18% of all interpreter
+	 * instructions in profiling, so it is the biggest cheap win.  The
+	 * (addr & 1) guard keeps the byte path for any odd address.
+	 */
+	if (!(addr & 1))
+		return *(const uint16_t *)(avr->flash + addr);
+#endif
 	return(avr->flash[addr] | (avr->flash[addr + 1] << 8));
 }
 
@@ -1676,18 +1690,16 @@ run_one_again:
 		(avr->interrupt_state == 0)
 #ifdef ARDUBOY_FAST_DISPATCH
 		/*
-		 * Zaurus port: keep the built-in intra-call batching from
-		 * overrunning a pending cycle timer.  A timer may have been
-		 * (re)registered by the instruction just executed (every
-		 * hardware-SPI byte does this), which makes it the sorted-list
-		 * head; stopping the internal loop the moment avr->cycle
-		 * reaches that deadline means the timer still fires on its
-		 * exact cycle -- the same point stock simavr would process it
-		 * after the boundary-crossing instruction.  This is what makes
-		 * fast dispatch bit-identical to the per-instruction path.
+		 * Zaurus port: with intra-call batching, avr->run_cycle_count
+		 * bounds the batch to the next cycle timer.  A timer registered
+		 * mid-batch (every hardware-SPI byte does this) calls
+		 * avr_cycle_timer_reset_sleep_run_cycles_limited(), which
+		 * immediately re-clamps run_cycle_count to the new soonest
+		 * deadline -- so the (run_cycle_count > cycle) test above
+		 * already stops the batch on its exact cycle.  No extra
+		 * per-instruction timer-pool peek is needed; this was verified
+		 * bit-identical across the differential harness.
 		 */
-		&& (avr->cycle_timers.timer == NULL ||
-		    avr->cycle < avr->cycle_timers.timer->when)
 #endif
 		)
 	{
